@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readPdfPayload, renderPrintPdf, PRINT_FONT_URL } from './pdf-render.js';
+import { guardSql } from './sync-guard.js';
 import { Buffer } from 'node:buffer';
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -1108,7 +1109,15 @@ const routeRequest = async (request, env) => {
       throw new ApiError("同步項目數量超過上限");
     }
 
+    const stampIds = body.deletedStampIds || [];
+    if (!Array.isArray(stampIds) || stampIds.length > 200 || !stampIds.every(validId)) throw new ApiError("印章刪除清單不正確");
+    const deletes = {projects:deletedProjectIds, templates:deletedTemplateIds, categories:deletedCategoryIds, clauses:deletedClauseIds, stamps:stampIds};
+    const guards = Object.entries(deletes).filter(([,ids]) => ids.length).map(([key,ids]) => {
+      if (!body.expectedDeletes?.[key]) throw new ApiError("請重新整理並核對刪除版本",409);
+      return env.DB.prepare(guardSql(key)).bind(workspaceId,JSON.stringify(ids),JSON.stringify(body.expectedDeletes[key]));
+    });
     const statements = [
+      ...stampIds.map(id => env.DB.prepare("UPDATE cloud_stamp_assets SET deleted_at=?3, updated_at=?3 WHERE workspace_id=?1 AND id=?2 AND deleted_at IS NULL").bind(workspaceId,id,new Date().toISOString())),
       ...deletedProjectIds.map((id) =>
         env.DB.prepare(
           "DELETE FROM cloud_projects WHERE workspace_id = ?1 AND id = ?2",
@@ -1165,20 +1174,26 @@ const routeRequest = async (request, env) => {
         ),
       );
     }
+    const written = [], skipped = [];
     if (statements.length) {
       await createWorkspaceVersion(env, workspaceId, "before-sync");
-      await env.DB.batch(statements);
+      let results;
+      try { results = await env.DB.batch([...guards,...statements]); }
+      catch (error) {
+        if (guards.length && /malformed JSON/i.test(String(error) + String(error.cause))) throw new ApiError("雲端資料已變更，請重新比對後確認",409);
+        throw error;
+      }
+      let i = guards.length;
+      const track = (key,id,action) => (results[i++].meta.changes ? written : skipped).push({key,id,action});
+      for (const key of ['stamps','projects','templates','categories','clauses']) for (const id of deletes[key]) {
+        if (key === 'categories') i++; // cascading clause deletion
+        track(key,id,'delete');
+      }
+      for (const [key,records] of Object.entries({projects,templates,categories,clauses})) for (const record of records) track(key,record.id,'save');
     }
     return json({
       ok: true,
-      projects: projects.length,
-      templates: templates.length,
-      categories: categories.length,
-      clauses: clauses.length,
-      deletedProjects: deletedProjectIds.length,
-      deletedTemplates: deletedTemplateIds.length,
-      deletedCategories: deletedCategoryIds.length,
-      deletedClauses: deletedClauseIds.length,
+      written, skipped,
     });
   }
 

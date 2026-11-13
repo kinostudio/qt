@@ -1915,7 +1915,19 @@
                                 const checked = Boolean(selection?.[item.key]?.includes(detail.id));
                                 const localPreview = getCloudRecordPreview(item.key, detail.local);
                                 const remotePreview = getCloudRecordPreview(item.key, detail.remote);
-                                return <label key={detail.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${checked ? 'border-kino/40 bg-kino/5 ring-1 ring-kino/10' : 'border-gray-100 bg-gray-50/70 hover:border-kino/25'}`}><input type="checkbox" checked={checked} onChange={() => onToggleItem(item.key, detail.id)} className="mt-1 h-4 w-4 shrink-0 accent-kino" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-xs text-gray-900">{localPreview.title}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${detail.status === 'local-only' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{detail.status === 'local-only' ? '僅本機新增' : '本機／雲端內容不同'}</span></span><span className="mt-1 block text-[11px] leading-relaxed text-gray-500">本機：{localPreview.meta}{localPreview.detail ? ` · ${localPreview.detail}` : ''}</span>{detail.remote && <span className="mt-1 block text-[11px] leading-relaxed text-gray-400">雲端：{remotePreview.meta}{remotePreview.detail ? ` · ${remotePreview.detail}` : ''}</span>}</span></label>;
+                                const differences = [];
+                                const show = v => v === undefined ? '（無）' : typeof v === 'string' && v.startsWith('data:') ? '（圖片）' : JSON.stringify(v);
+                                const diff = (a,b,path) => {
+                                    if (a === b) return;
+                                    if ((a == null || typeof a === 'object') && (b == null || typeof b === 'object') && (a || b)) {
+                                        for (const k of new Set([...Object.keys(a||{}),...Object.keys(b||{})])) {
+                                            if (!path && ['updatedAt','dataUrl','cloudState'].includes(k)) continue;
+                                            diff(a?.[k],b?.[k],path ? path+'.'+k : k);
+                                        }
+                                    } else differences.push(path+'：雲端 '+show(b)+' → 本機 '+show(a));
+                                };
+                                diff(detail.local,detail.remote,'');
+                                return <label key={detail.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${checked ? 'border-kino/40 bg-kino/5 ring-1 ring-kino/10' : 'border-gray-100 bg-gray-50/70 hover:border-kino/25'}`}><input type="checkbox" checked={checked} onChange={() => onToggleItem(item.key, detail.id)} className="mt-1 h-4 w-4 shrink-0 accent-kino" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-xs text-gray-900">{localPreview.title}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${detail.status === 'local-only' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{detail.status === 'local-only' ? '僅本機新增' : '本機／雲端內容不同'}</span></span><span className="mt-1 block text-[11px] leading-relaxed text-gray-500">本機：{localPreview.meta}{localPreview.detail ? ` · ${localPreview.detail}` : ''}</span>{detail.remote && <span className="mt-1 block text-[11px] leading-relaxed text-gray-400">雲端：{remotePreview.meta}{remotePreview.detail ? ` · ${remotePreview.detail}` : ''}</span>}<span className="block whitespace-pre-wrap break-all text-xs">{differences.join('\n')}</span></span></label>;
                             })}</div></section> : null)}
                         </div>
                     </div>}
@@ -2890,6 +2902,7 @@
             const hadLocalClauseCategoriesRef = useRef(localStorage.getItem(CLAUSE_CATEGORY_STORAGE_KEY) !== null);
             const msalInstanceRef = useRef(null);
             const oneDriveAutoSaveTimerRef = useRef(null);
+            const oneDriveWrites = useRef(Promise.resolve());
             const allContractTemplates = [...BUILTIN_CONTRACT_TEMPLATES, ...contractTemplates];
             
             // Toast State
@@ -3861,7 +3874,13 @@
                 setOneDriveFolder(resolvedFolder);
                 return resolvedFolder;
             };
-            const saveDataToOneDrive = async ({ silent = false } = {}) => {
+            const saveDataToOneDrive = (options = {}) => {
+                clearTimeout(oneDriveAutoSaveTimerRef.current);
+                const job = oneDriveWrites.current.then(() => writeOneDriveSnapshot(options));
+                oneDriveWrites.current = job.catch(() => {});
+                return job;
+            };
+            const writeOneDriveSnapshot = async ({ silent = false } = {}) => {
                 const hasDestination = oneDriveAutoCreateProjectFolder ? oneDriveParentFolder : oneDriveFolder;
                 if (!oneDriveAccount || !hasDestination) {
                     if (!silent) setShowOneDriveModal(true);
@@ -4164,19 +4183,18 @@
                         ...selected,
                         stamps: stampUploadCandidates.map(record => (assetMap.get(record.id) || record).id)
                     };
-                    if (includeCloudDeletes) {
-                        for (const stampId of deletedStampIds) {
-                            try {
-                                await cloudRequest(`/api/stamps/${encodeURIComponent(stampId)}`, { method: 'DELETE' });
-                            } catch (error) {
-                                if (error.status !== 404) throw error;
-                            }
-                        }
+                    const expectedDeletes = {};
+                    for (const [key,ids] of Object.entries({projects:deletedProjectIds,templates:deletedTemplateIds,categories:deletedClauseCategoryIds,clauses:deletedClauseIds,stamps:deletedStampIds})) {
+                        expectedDeletes[key] = Object.fromEntries(ids.map(id => [id,{
+                            updatedAt: preflight[key].find(r => r.id === id)?.updatedAt ?? null,
+                            ...(key === 'categories' && {children:Object.fromEntries(preflight.clauses.filter(c => c.categoryId === id).map(c => [c.id,c.updatedAt]))})
+                        }]));
                     }
-                    await cloudRequest('/api/sync', {
+                    const outcome = await cloudRequest('/api/sync', {
                         method: 'POST',
                         body: JSON.stringify({
                             projects: selectedProjects,
+                            expectedDeletes, deletedStampIds: includeCloudDeletes ? deletedStampIds : [],
                             templates: selectedTemplates,
                             categories: shouldAdoptRemoteCategories ? [] : selectedCategories,
                             clauses: shouldAdoptRemoteClauses ? [] : selectedClauses,
@@ -4191,13 +4209,20 @@
                     const [syncResult, stampResult] = await Promise.all([cloudRequest('/api/sync'), cloudRequest('/api/stamps')]);
                     const remote = normalizeRemoteCloudData({ ...syncResult, stamps: stampResult.assets || [] });
                     const merged = mergeRemoteWithLocalSelection(remote, localSnapshotForMerge, selectionForMerge, !includeCloudDeletes);
-                    await applyRemoteCloudData(merged, `已合併 ${selectedProjects.length + selectedTemplates.length + selectedCategories.length + selectedClauses.length + assetMap.size} 筆本機項目${includeCloudDeletes ? '，並同步刪除紀錄' : ''}`, { clearDeletionQueue: includeCloudDeletes });
+                    const describe = r => (localSnapshot[r.key]?.find(v=>v.id===r.id)?.name || preflight[r.key]?.find(v=>v.id===r.id)?.name || CLOUD_COLLECTION_LABELS[r.key])+' ('+r.id+')';
+                    for (const r of outcome.skipped.filter(r=>r.action==='save')) {
+                        const local = localSnapshot[r.key].find(v=>v.id===r.id);
+                        if (local) merged[r.key] = [...merged[r.key].filter(v=>v.id!==r.id),local];
+                    }
+                    await applyRemoteCloudData(merged, '', { clearDeletionQueue: includeCloudDeletes });
+                    window.alert(['D1 同步結果','實際寫入／刪除：'+(outcome.written.map(describe).join('、') || '無'),'略過：'+(outcome.skipped.map(describe).join('、') || '無')].join('\n'));
                     setCloudSyncPreview(null);
                     setCloudSyncSelection(makeEmptyCloudSyncSelection());
                 } catch (error) {
                     console.error('Confirmed cloud sync error', error);
                     setCloudSyncStatus('error');
-                    showToast('同步失敗，雲端寫入前版本仍保留');
+                    if (error.status === 409) await syncCloudData();
+                    showToast(error.status === 409 ? '雲端已變更，請重新核對差異' : '同步失敗，請重新核對雲端狀態');
                 }
             };
             const loadCloudVersions = async () => {
