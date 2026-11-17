@@ -124,6 +124,15 @@
 - not_checked：正式Browser Run、客戶手機完整簽署、填寫後送出前預覽、正式部署。暫存安全清理、編輯台建立與客戶頁仍待完成；不宣稱簽署已上線。
 - 本批未套用正式migration、未部署正式Worker／前端、未寫入既有D1／R2／OneDrive；Edge還原結果與OneDrive新站登入仍待實際核對。
 
+### 客戶手機頁與填寫後預覽（隔離完成，未部署）
+
+- 新增獨立 `signing-client/`：甲方四欄、手寫／圖片上傳、完整PDF閱讀連結、填寫後預覽、同意確認、完成與下載。手機不依賴原生內嵌PDF；桌面另有內嵌及備援連結。全程不載入編輯台或Google／Microsoft登入。
+- 填寫後預覽沿用實際簽署產檔器，只讀D1／R2且不保存客戶圖片、不鎖定；版本不符、未知欄位、圖片錯誤、限流、產檔期間撤銷均拒絕。HTTP仍受正式關閉的簽署旗標保護。
+- 送出後以sessionStorage保留完全相同的提交與冪等鍵，支援斷線／重新整理重試；完成後清除。沒有另外保存分享權杖，不新增權限或登入需求。
+- passed：56項單元測試；隔離手機真實點擊／畫筆／上傳／預覽作廢／同意／斷線／重新整理相同請求重試／下載；手機及桌面介面截圖檢查；兩組本機workerd測試；快速／詳細實際Chromium PDF仍維持1／2頁；Worker dry-run 934.43KiB／gzip176.21KiB。
+- `build-signing-client.mjs` 只輸出五個公開檔案，含no-store／no-referrer／noindex／CSP及單份連結路由，不含編輯台、備份或憑證。未新增或部署Cloudflare Pages／DNS，未啟用正式簽署、未套用migration，也未寫入正式D1／R2／OneDrive。
+- not_checked：客戶UI＋真實Worker Browser Run的完整整合、實體手機PDF閱讀器、建立／撤銷／狀態管理介面、免費額度總量保護與安全暫存清理。這些與先前遷站還原／OneDrive驗收都仍是正式公開前的門檻。
+
 ## 自動續作
 
 已建立本對話 active goal；沿用並更新此對話既有 heartbeat `automation-6`，每小時續作一個安全工作批次。需本機 Codex 能執行；不代表離線雲端常駐服務。需使用者授權的步驟記錄並請求，不擅自繞過。

@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createSigningRequest,revokeSigningRequest,signingSha256} from '../cloud-sync/src/signing-store.js';
 import {submitSigningRequest,loadSignedPdfForGuest,loadSignedPdfForOwner} from '../cloud-sync/src/signing-submit.js';
 import {signingBody} from './fixtures/signing.mjs';
-import {loadSigningPreview} from '../cloud-sync/src/signing-preview.js';
+import {loadSigningPreview,previewSigningSubmission} from '../cloud-sync/src/signing-preview.js';
 
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a3sAAAAASUVORK5CYII=';
 // Opaque renderer test bytes only: these tests verify storage, not PDF layout or validity.
@@ -22,6 +22,49 @@ async function fixture(t) {
   const body={idempotencyKey:crypto.randomUUID(),snapshotSha256:share.snapshotSha256,clientCompany:'測試甲方',clientContact:'測試代表',clientTaxId:'',clientPhone:'',signatureImage:png,signatureKind:'handwritten',consent:true};
   return {sqlite,db,bucket,objects,services,share,body,counts:()=>({renders,verifications}),advance:ms=>{time+=ms;}};
 }
+
+const previewBody=body=>{const {idempotencyKey,consent,...fields}=body;return fields;};
+
+test('filled preview permits revisions without storing or accepting any client signature',async t=>{
+  const f=await fixture(t),seen=[];
+  const original=[...f.objects.entries()];
+  f.services.renderPdf=async({submission})=>{seen.push(submission);return pdf;};
+  for(const clientCompany of ['第一份預覽','修改後預覽']) {
+    const result=await previewSigningSubmission(f.db,f.bucket,f.share.token,{...previewBody(f.body),clientCompany},f.services);
+    assert.deepEqual(result.bytes,pdf);
+  }
+  assert.deepEqual(seen.map(s=>s.clientCompany),['第一份預覽','修改後預覽']);
+  assert.ok(seen.every(s=>s.consent===undefined));
+  assert.deepEqual([...f.objects.entries()],original);
+  assert.equal(f.sqlite.prepare('SELECT status,submission_key FROM quote_signing_requests').get().status,'pending');
+  assert.equal(f.sqlite.prepare('SELECT submission_key FROM quote_signing_requests').get().submission_key,null);
+  assert.equal((await submitSigningRequest(f.db,f.bucket,f.share.token,f.body,f.services)).status,'signed');
+});
+
+test('filled preview rejects changed versions, extra quote fields and invalid images before rendering',async t=>{
+  const f=await fixture(t),body=previewBody(f.body);
+  for(const fields of [{snapshotSha256:'0'.repeat(64)},{price:1},{signatureImage:'https://untrusted.test/stamp.png'},{consent:true}]) {
+    await assert.rejects(previewSigningSubmission(f.db,f.bucket,f.share.token,{...body,...fields},f.services),e=>[400,409].includes(e.status));
+  }
+  assert.equal(f.counts().renders,0);assert.equal(f.objects.size,1);
+});
+
+test('filled preview rate limits and image failures never lock the quotation',async t=>{
+  const f=await fixture(t),body=previewBody(f.body);
+  f.services.allowRender=async()=>false;
+  await assert.rejects(previewSigningSubmission(f.db,f.bucket,f.share.token,body,f.services),e=>e.status===429);
+  f.services.allowRender=async()=>true;f.services.validateImage=async()=>{throw new Error('invalid image');};
+  await assert.rejects(previewSigningSubmission(f.db,f.bucket,f.share.token,body,f.services),/invalid image/);
+  assert.equal(f.counts().renders,0);assert.equal(f.objects.size,1);
+  assert.equal(f.sqlite.prepare('SELECT status FROM quote_signing_requests').get().status,'pending');
+});
+
+test('filled preview revoked mid-render is discarded without writing client data',async t=>{
+  const f=await fixture(t);
+  f.services.renderPdf=async()=>{await revokeSigningRequest(f.db,'user:test',f.share.id);return pdf;};
+  await assert.rejects(previewSigningSubmission(f.db,f.bucket,f.share.token,previewBody(f.body),f.services),e=>e.status===404);
+  assert.equal(f.objects.size,1);
+});
 
 test('pending preview is cached without accepting a signature and rejects tampered PDF',async t=>{
   const f=await fixture(t);

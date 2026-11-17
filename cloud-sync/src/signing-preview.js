@@ -1,5 +1,25 @@
 import {SigningError,loadSigningSnapshot,signingSha256} from './signing-store.js';
 import {loadSignedPdfForGuest} from './signing-submit.js';
+import {validateSigningPreview} from './signing-validation.js';
+
+function pdfBytes(rendered) {
+  const bytes=rendered instanceof Uint8Array?rendered:new Uint8Array(rendered);
+  if(bytes.byteLength<8 || bytes.byteLength>12*1024*1024 || new TextDecoder().decode(bytes.subarray(0,5))!=='%PDF-') throw new SigningError('待簽PDF無法產生',503);
+  return bytes;
+}
+
+export async function previewSigningSubmission(db,bucket,token,body,services) {
+  const submission=validateSigningPreview(body);
+  const fixed=await loadSigningSnapshot(db,bucket,token);
+  if(fixed.status!=='pending') throw new SigningError('此報價已送出簽署，不能更改預覽',409);
+  if(submission.snapshotSha256!==fixed.snapshotSha256) throw new SigningError('報價版本已變更，請重新載入',409);
+  if(!await services.allowRender(fixed.id)) throw new SigningError('預覽過於頻繁，請稍後重試',429);
+  await services.validateImage(submission.signatureImage,{snapshot:fixed.snapshot,submission});
+  const bytes=pdfBytes(await services.renderPdf({snapshot:fixed.snapshot,submission}));
+  const current=await loadSigningSnapshot(db,bucket,token);
+  if(current.status!=='pending') throw new SigningError('簽署狀態已變更，請重新載入',409);
+  return {bytes,sha256:await signingSha256(bytes),id:fixed.id,quotationId:fixed.snapshot.quotation.header.quotationId};
+}
 
 export async function loadSigningPreview(db,bucket,token,services) {
   const fixed=await loadSigningSnapshot(db,bucket,token);
@@ -14,9 +34,7 @@ export async function loadSigningPreview(db,bucket,token,services) {
   };
   const cached=await bucket.get(key);if(cached) return read(cached);
   if(!await services.allowRender(fixed.id)) throw new SigningError('預覽過於頻繁，請稍後重試',429);
-  const rendered=await services.renderPdf({snapshot:fixed.snapshot,submission:null});
-  const bytes=rendered instanceof Uint8Array?rendered:new Uint8Array(rendered);
-  if(bytes.byteLength<8 || bytes.byteLength>12*1024*1024 || new TextDecoder().decode(bytes.subarray(0,5))!=='%PDF-') throw new SigningError('待簽PDF無法產生',503);
+  const bytes=pdfBytes(await services.renderPdf({snapshot:fixed.snapshot,submission:null}));
   const hash=await signingSha256(bytes);
   const current=await loadSigningSnapshot(db,bucket,token);
   if(current.status!=='pending') throw new SigningError('簽署狀態已變更，請重新載入',409);

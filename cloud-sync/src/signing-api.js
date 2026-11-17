@@ -2,7 +2,7 @@ import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapsho
 import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './signing-validation.js';
 import {loadSignedPdfForGuest,loadSignedPdfForOwner,submitSigningRequest} from './signing-submit.js';
 import {createSigningRenderSession} from './signing-browser.js';
-import {loadSigningPreview} from './signing-preview.js';
+import {loadSigningPreview,previewSigningSubmission} from './signing-preview.js';
 
 export const isSigningGuestPath=path=>['/api/signing/guest','/api/signing/guest/pdf','/api/signing/guest/preview'].includes(path);
 
@@ -43,11 +43,16 @@ export async function handleSigningGuest(request,env) {
     if(!env.PDF_RATE_LIMITER) throw new SigningError('簽署用量保護尚未設定',503);
     return (await env.PDF_RATE_LIMITER.limit({key:'signing:documents'})).success;
   };
-  if(request.method==='POST' && path==='/api/signing/guest') {
+  if(request.method==='POST' && ['/api/signing/guest','/api/signing/guest/preview'].includes(path)) {
     if(env.SIGNING_SUBMIT_ENABLED!=='true') throw new SigningError('客戶簽署送出尚未開放',503);
     const session=createSigningRenderSession(env);
     try {
-      const result=await submitSigningRequest(env.DB,env.STAMP_BUCKET,token,await readSigningJson(request),{...session,allowRender});
+      const body=await readSigningJson(request);
+      if(path==='/api/signing/guest/preview') {
+        const file=await previewSigningSubmission(env.DB,env.STAMP_BUCKET,token,body,{...session,allowRender});
+        return pdfReply(file,file.quotationId);
+      }
+      const result=await submitSigningRequest(env.DB,env.STAMP_BUCKET,token,body,{...session,allowRender});
       return reply(result,result.status==='signed'?200:202);
     } finally {await session.close();}
   }

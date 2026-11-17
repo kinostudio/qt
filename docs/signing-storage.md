@@ -2,7 +2,7 @@
 
 本機模組：`cloud-sync/src/signing-store.js`。新增 migration：`0008_quote_signing.sql`。
 
-目前完成儲存層、SQL 狀態轉移，以及管理者建立／讀取／撤銷、客戶讀取API；不是完整客戶簽署功能。API在開發分支接入Worker，但預設關閉，未接入編輯台或客戶頁，也未向正式D1套用migration或部署這批Worker。
+目前完成儲存層、SQL 狀態轉移、管理者API、客戶預覽／提交API及獨立客戶頁。均在開發分支，正式預設關閉；編輯台管理介面、完整端對端驗收與正式部署尚未完成，不能宣稱已可公開簽署。尚未向正式D1套用migration。
 
 ## API 與啟用邊界
 
@@ -11,6 +11,7 @@
 - `DELETE /api/signing/<id>`：撤銷連結，不刪除快照或已簽PDF。
 - `GET /api/signing/guest`：使用 `Authorization: Quote <分享權杖>` 讀取單份快照。權杖不放在API查詢網址或API路徑，避免一般API網址日誌收集權杖。
 - `GET /api/signing/guest/pdf` 及 `GET /api/signing/<id>/pdf`：分別核對客戶連結或管理者工作區後，讀取同一份固定已簽檔，核對SHA-256；檔名使用報價單號。過期／撤銷只阻擋客戶存取，管理者仍可保留版本。
+- `POST /api/signing/guest/preview`：只接受甲方四欄、PNG簽名及快照雜湊，不接受同意欄位、冪等鍵或報價修改。產生填寫後預覽但不寫入D1／R2、不claim，允許重新填寫。產檔後再核對連結有效與pending狀態，過期或撤銷不回傳檔案。
 - `quote.kinostudio.tw` 的CORS只新增到上述客戶讀取端點，不開放 `/api/sync`、`/api/stamps` 或管理者端點；分享權杖不能當Google登入Token。
 - 未設定 `SIGNING_ENABLED=true` 時不啟用。管理者另外必須在 `SIGNING_ALLOWED_EMAILS` 白名單中；正式設定尚未加入這兩個值。不可在完整提交／PDF／客戶頁與遷站驗收完成前啟用。
 - 建立沿用既有 `PDF_RATE_LIMITER` 的同一使用者限流額度；有圖片時使用既有Browser Run binding解碼。這會使用瀏覽器額度，但本批測試全部在本機，沒有正式Browser Run呼叫。
@@ -51,7 +52,7 @@ API只接受報價已知欄位與管理者確認的固定列印文件，不接�
 - 原始分享期限到期後，不再接受新簽署；已接受的相同提交可完成PDF重試，但不因此重新開放客戶下載。
 - 競爭失敗、過期租約或不確定提交可能留下私有暫存物件。正式啟用前須加入依D1引用與保留期核對的安全清理；目前不自動刪除，以免破壞已接受版本。
 
-正式版型產檔器已在開發分支接線，`POST /api/signing/guest` 另需 `SIGNING_SUBMIT_ENABLED=true`；正式設定未加入，仍拒絕送出。客戶手機頁、送出前填寫預覽與編輯台建立介面尚未完成，不能對客戶宣稱已可簽署。SHA-256是完整性核對，不是憑證式數位簽章或本人身分認證。
+正式版型產檔器已在開發分支接線，`POST /api/signing/guest` 與填寫後預覽另需 `SIGNING_SUBMIT_ENABLED=true`；正式設定未加入，仍拒絕送出。客戶頁及填寫後預覽已有隔離測試，編輯台建立介面與完整正式流程仍未完成，不能對客戶宣稱已可簽署。SHA-256是完整性核對，不是憑證式數位簽章或本人身分認證。
 
 `GET /api/signing/guest/preview` 產生待簽PDF並私有快取、核對雜湊；產檔完成後重查撤銷／期限／狀態，不接受簽署。已簽版本改讀固定歸檔。僅快取未命中使用Browser Run，沿用限流；正式上線前仍需總額度保護與安全暫存清理。
 
@@ -65,6 +66,16 @@ R2成功但D1回應失敗時，保留該私人物件，不直接刪除：D1可�
 4. 將已通過儲存核心測試的租約／冪等重試接上正式報價版型產檔器，驗證實際PDF內容與視覺，加入安全暫存清理。不能把測試產檔回應當成正式PDF驗收。
 5. 客戶API與編輯台API的來源、驗證及回應必須隔離；no-store、no-referrer、禁止索引。不可因新增客戶網域就開放原本同步API。
 6. 正式migration前先呈現影響與備份／回復方法；舊站／新站遷移驗收未完成，不提前私人化或關閉舊站。
+
+## 獨立客戶頁（本機完成，未部署）
+
+原始碼 `signing-client/`，僅用原生JavaScript／CSS，不載入編輯台、Google或Microsoft程式。執行 `node scripts/build-signing-client.mjs` 產生 `tmp/qt-signing-site`，只包含五個明確允許檔案；不可把整個Git儲存庫設成客戶站公開目錄。預定路由 `/s/<token>`；Pages回退與隱私／CSP標頭已備妥，但尚未設定客戶Pages專案或網域。
+
+- 甲方資料、手寫畫布（pointer事件）或圖片轉PNG；欄位、筆畫、模式、上傳變動均作廢舊預覽與同意勾選。確認動作必須在填寫後預覽完成、再次勾選同意後才可用。
+- 手機用明確的「開啟完整PDF預覽」連結交給閱讀器，不依賴手機內嵌PDF；桌面另有內嵌預覽與相同備援連結。實體iOS／Android及閱讀器行為仍待驗收。
+- 確認後才在sessionStorage暫存原始提交（含簽名／甲方資料），支援同分頁重新整理後以同冪等鍵重試，不能改簽名覆寫。成功後清除；成功前關閉整個瀏覽器工作階段可能遺失重試資料。畫面有共用裝置與暫存說明，原始分享權杖不另外存入storage。
+- 分享權杖僅使用Quote header呼叫固定API，禁止參照頁網址外送，不加第三方分析；分享網址本身仍是存取憑證，不應轉傳。到期／撤銷後不得開啟新下載；已下載檔案無法遠端收回。
+- `node tests/signing-client.cjs` 以隔離手機瀏覽器模擬API，涵蓋手寫／上傳、舊預覽作廢、明確同意、第一次送出斷線、重新整理重試原資料及下載檔名。UI預設PDF回應是標記測試位元組，不代表PDF版型驗收；設定 `SIGNING_CLIENT_PDF=tmp/pdfs/signing-quick.pdf` 可用實際產生的測試PDF檢查下載／預覽連結。真正版型另由 `tests/signing-render.cjs` 驗證。
 
 ## 測試證據
 

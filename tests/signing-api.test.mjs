@@ -118,6 +118,16 @@ test('guest cannot use a Google bearer session or mutate the shared snapshot',as
   assert.equal(objects.size,0);
 });
 
+test('filled preview route remains gated and validates before acquiring a browser or accepting a signature',async t=>{
+  const {env,objects,sqlite}=await fixture(t);
+  const share=await(await worker.fetch(request('/api/signing','POST',signingBody()),env)).json();
+  const make=body=>new Request('https://api.test/api/signing/guest/preview',{method:'POST',headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+share.token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  assert.equal((await worker.fetch(make({}),env)).status,503);
+  env.SIGNING_SUBMIT_ENABLED='true';
+  assert.equal((await worker.fetch(make({}),env)).status,400);
+  assert.equal(objects.size,1);assert.equal(sqlite.prepare('SELECT status FROM quote_signing_requests').get().status,'pending');
+});
+
 test('guest and owner download identical archived PDF bytes; revocation only blocks guest access',async t=>{
   const {env,sqlite,objects}=await fixture(t);
   const share=await (await worker.fetch(request('/api/signing','POST',signingBody()),env)).json();

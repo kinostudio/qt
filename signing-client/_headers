@@ -1,0 +1,7 @@
+/*
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src https://kino-quotation-data-api.film-kinostudio.workers.dev; img-src data: blob:; frame-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
