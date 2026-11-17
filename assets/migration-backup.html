@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>QT 完整本機備份</title>
+  <script src="./local-backup.js" defer></script>
+  <style>body{margin:0;background:#f4f7f9;font:16px/1.7 system-ui,sans-serif;color:#182230}main{max-width:620px;margin:7vh auto;padding:24px;background:white;border:1px solid #dbe4eb;border-radius:18px}h1{font-size:24px;color:#105482}button{border:0;border-radius:10px;padding:14px 18px;background:#105482;color:white;font-size:16px;cursor:pointer}button:disabled{opacity:.5}p{overflow-wrap:anywhere}.note{padding:14px;border-radius:10px;background:#eef6fc}#result{white-space:pre-wrap} @media(max-width:700px){main{margin:16px}}</style>
+</head>
+<body><main>
+  <h1>QT 完整本機備份</h1>
+  <p class="note">這個輔助頁只讀取目前網址、目前瀏覽器設定檔中的 QT 本機資料。不登入、不上傳、不清除資料，也不讀寫雲端資料庫。</p>
+  <p>請在原本編輯報價的瀏覽器開啟本頁，先儲存報價並關閉其他 QT 分頁，再下載備份。檔案含客戶及印章資料，未加密，請保存在私人位置。</p>
+  <p>目前網址：<strong id="origin"></strong></p>
+  <button id="download" type="button">下載此網址的完整本機備份</button>
+  <p id="result" role="status" aria-live="polite"></p>
+  <p>下載後，到新站「資料庫管理 → 備份／遷站」匯入。這份備份不包含登入 Token，換網址後仍需重新登入。</p>
+</main>
+<script>
+document.getElementById('origin').textContent=location.origin;
+document.getElementById('download').addEventListener('click',async event=>{
+  const button=event.currentTarget, result=document.getElementById('result');button.disabled=true;
+  try{
+    if(!window.KinoLocalBackup) throw new Error('備份模組尚未載入，請重新整理後重試。');
+    const backup=await window.KinoLocalBackup.create(localStorage,location.origin);
+    if(!Object.keys(backup.entries).length) throw new Error('未找到 QT 本機資料。請確認這是原本使用的瀏覽器、設定檔及網址。');
+    const counts=window.KinoLocalBackup.summary(backup.entries);
+    const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='kino-qt-local-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+    result.textContent='已啟動下載。請確認檔案已保存。\n'+(counts.draft?'含目前草稿；':'')+counts.projects+' 個專案、'+counts.templates+' 份範本、'+counts.categories+' 個分類、'+counts.clauses+' 條條款、'+counts.stamps+' 顆印章。';
+  }catch(error){result.textContent=error.message;}finally{button.disabled=false;}
+});
+</script>
+</body></html>
