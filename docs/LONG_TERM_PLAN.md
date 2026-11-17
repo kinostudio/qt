@@ -150,6 +150,7 @@
 - passed：67項單元測試、管理者手機／桌面及客戶手機模擬流程；兩組隔離workerd測試，含新額度表及HTTP PDF超額429。Worker dry-run940.77KiB／gzip178.01KiB。
 - [browser-budget.md](browser-budget.md) 記錄政策、不是實際帳單秒數的限制，以及必須先新增額度表才部署Worker的順序。其他同帳號服務用量不在此保護內；正式Free方案／帳號額度、Browser Run真實關閉、完整整合與遷站驗收仍待核對。
 - 本輪沒有呼叫正式Browser Run、設定計費或Secret、套用正式migration、部署正式站，亦未修改現有D1／R2／OneDrive資料。0008／0009都尚未套用正式D1。
+- 後續唯讀預檢：Wrangler whoami已成功，先前CLI OAuth失效不再是目前阻礙。正式D1查詢sqlite_master僅找到d1_migrations，沒有quote_signing_requests／quote_browser_budget；回應rows_written=0、changed_db=false。Edge頁籤仍存在，但以ID及URL重新取得均回報Emulation.setFocusEmulationEnabled逾時；已停止UI操作並請使用者重新連接。Free方案畫面、新站還原與OneDrive真實登入仍不能宣稱驗收完成。
 
 ## 自動續作
 
