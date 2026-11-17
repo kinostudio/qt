@@ -16,6 +16,10 @@ CREATE TABLE quote_signing_requests (
   signed_pdf_key TEXT,
   signed_pdf_sha256 TEXT,
   signed_at INTEGER,
+  render_lease_id TEXT,
+  render_lease_until INTEGER,
+  CHECK ((render_lease_id IS NULL AND render_lease_until IS NULL)
+    OR (status = 'submitting' AND render_lease_id IS NOT NULL AND render_lease_until IS NOT NULL)),
   CHECK (
     (status = 'pending' AND submission_key IS NULL AND submission_sha256 IS NULL AND idempotency_hash IS NULL AND submitted_at IS NULL)
     OR (status IN ('submitting','signed') AND submission_key IS NOT NULL AND submission_sha256 IS NOT NULL AND length(submission_sha256) = 64 AND idempotency_hash IS NOT NULL AND length(idempotency_hash) = 64 AND submitted_at IS NOT NULL)

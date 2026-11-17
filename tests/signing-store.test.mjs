@@ -53,7 +53,7 @@ test('snapshot is frozen independently from the draft and raw share token is nev
   const loaded=await loadSigningSnapshot(db,bucket,share.token,now);
   assert.equal(loaded.snapshot.quotation.notes[0].text,'固定測試條款');
   assert.equal(loaded.snapshot.printScale,95);
-  assert.deepEqual(Object.keys(loaded).sort(),['expiresAt','id','snapshot','status']);
+  assert.deepEqual(Object.keys(loaded).sort(),['expiresAt','id','snapshot','snapshotSha256','status']);
   objects.set(row.snapshot_key,'{}');
   await assert.rejects(loadSigningSnapshot(db,bucket,share.token,now),/完整性/);
 });
@@ -81,7 +81,8 @@ test('atomic claim accepts exactly one submission, freezes it, and final PDF can
   assert.throws(()=>sqlite.exec("UPDATE quote_signing_requests SET status='pending'"));
   assert.throws(()=>sqlite.exec("UPDATE quote_signing_requests SET submission_sha256='"+'c'.repeat(64)+"'"),/immutable client submission/);
   const finish=sqlite.prepare(SIGNING_SQL.finish);
-  const pdf={'?1':share.id,'?2':submissionHash,'?3':'quote-signing/v1/test/final.pdf','?4':'d'.repeat(64),'?5':now+2};
+  sqlite.prepare(SIGNING_SQL.lease).get({'?1':share.id,'?2':now+1,'?3':'test-render-lease'});
+  const pdf={'?1':share.id,'?2':submissionHash,'?3':'quote-signing/v1/test/final.pdf','?4':'d'.repeat(64),'?5':now+2,'?6':'test-render-lease'};
   assert.equal(finish.get({...pdf,'?2':'f'.repeat(64)}),undefined);
   assert.equal(finish.get(pdf).status,'signed');
   assert.equal(finish.get(pdf),undefined);

@@ -10,6 +10,7 @@
 - `GET /api/signing/<id>`：只允許該版本所屬工作區管理者，保留查看已過期／撤銷版本的能力；不返回R2位置或原始分享權杖。
 - `DELETE /api/signing/<id>`：撤銷連結，不刪除快照或已簽PDF。
 - `GET /api/signing/guest`：使用 `Authorization: Quote <分享權杖>` 讀取單份快照。權杖不放在API查詢網址或API路徑，避免一般API網址日誌收集權杖。
+- `GET /api/signing/guest/pdf` 及 `GET /api/signing/<id>/pdf`：分別核對客戶連結或管理者工作區後，讀取同一份固定已簽檔，核對SHA-256；檔名使用報價單號。過期／撤銷只阻擋客戶存取，管理者仍可保留版本。
 - `quote.kinostudio.tw` 的CORS只新增到上述客戶讀取端點，不開放 `/api/sync`、`/api/stamps` 或管理者端點；分享權杖不能當Google登入Token。
 - 未設定 `SIGNING_ENABLED=true` 時不啟用。管理者另外必須在 `SIGNING_ALLOWED_EMAILS` 白名單中；正式設定尚未加入這兩個值。不可在完整提交／PDF／客戶頁與遷站驗收完成前啟用。
 - 建立沿用既有 `PDF_RATE_LIMITER` 的同一使用者限流額度；有圖片時使用既有Browser Run binding解碼。這會使用瀏覽器額度，但本批測試全部在本機，沒有正式Browser Run呼叫。
@@ -35,7 +36,20 @@ API只接受報價已知欄位，不接受工作區、登入憑證、任意HTML�
 
 狀態只允許 `pending → submitting → signed`。撤銷使用獨立欄位，不刪除已簽版本；撤銷後不能重新啟用同一連結。預設14天、可在建立前選1–30天；目前到期限制客戶讀取及首次送出，已接受的提交仍可重試產生PDF。
 
-`SIGNING_SQL.claim` 是單次條件 UPDATE，檢查未過期、未撤銷、仍在待簽；回傳空值代表本次沒有取得簽署權。`finish` 必須匹配已接受提交的雜湊，簽後PDF位置、雜湊、時間不可更新。相同冪等鍵與相同提交的重試判斷，仍需在API整合時實作，不能把第二次claim當新簽署。
+`SIGNING_SQL.claim` 是單次條件 UPDATE，檢查未過期、未撤銷、仍在待簽；回傳空值代表本次沒有取得簽署權。`finish` 必須匹配已接受提交的雜湊及有效產檔租約，簽後PDF位置、雜湊、時間不可更新。`signing-submit.js` 已處理相同冪等鍵與相同提交的重試；正式HTTP送出路由仍待接線，不能把第二次claim當新簽署。
+
+## 客戶送出與產檔重試（核心已完成，尚未開放HTTP送出）
+
+`signing-submit.js` 接受經確認的甲方四欄、PNG簽名／印章、簽署方式、快照SHA-256與冪等識別碼，不接受金額、條款或乙方資料。核心必須由可信呼叫端提供實際圖片驗證、正式版型產檔器及用量保護；缺少任一項即拒絕，不會先接受簽署。
+
+- 先保存固定客戶提交，再以單次claim取得簽署權。不同提交或不同冪等鍵不能覆寫已接受內容；相同內容重試不重新簽署，已完成時返回同一檔案雜湊。
+- 產檔用2分鐘D1租約，同時重試只觀察進度，不再啟動產檔。租約失效可換一個新租約重試；舊工作完成後不能取代新租約的結果，也不能解除別人的租約。
+- PDF先以獨立且防覆蓋的R2 key存檔，D1才以租約與提交雜湊為條件改為signed。產檔或R2失敗保留submitting，不回退成可改寫的pending。
+- D1已提交但回應遺失時，相同請求能查到既有版本並恢復；不因錯誤而刪除可能已被引用的物件。
+- 原始分享期限到期後，不再接受新簽署；已接受的相同提交可完成PDF重試，但不因此重新開放客戶下載。
+- 競爭失敗、過期租約或不確定提交可能留下私有暫存物件。正式啟用前須加入依D1引用與保留期核對的安全清理；目前不自動刪除，以免破壞已接受版本。
+
+正式版型產檔器、客戶HTTP送出路由及手機頁面尚未接線；現階段 `POST /api/signing/guest` 仍拒絕，不能對客戶宣稱已可簽署。SHA-256是完整性核對，不是憑證式數位簽章或本人身分認證。
 
 R2成功但D1回應失敗時，保留該私人物件，不直接刪除：D1可能已完成提交但回應遺失。後續可依D1引用核對孤立物件，不能靠錯誤訊息推定可刪除。
 
@@ -43,8 +57,8 @@ R2成功但D1回應失敗時，保留該私人物件，不直接刪除：D1可�
 
 1. 已有管理者工作區隔離API、單元整合及Workers本機runtime驗收；仍需編輯台建立／查閱／撤銷流程及正式登入端對端驗收。
 2. 已有嚴格快照及圖片解碼檢查；編輯台仍需連接PNG轉換、確認預覽與明確建立動作，不能直接把含外部SVG路徑或未載入印章的草稿送出。
-3. 客戶只能更新甲方資料與簽名／印章，不接受客戶回傳金額或條款作為正式版本。上傳圖片需驗證實際格式、大小、尺寸及解碼結果。
-4. 限時／撤銷、相同冪等鍵重試、跨工作區及兩個客戶競爭測試；PDF失敗留在submitting，可安全重試，成功保存固定PDF後才標記signed。
+3. 將既有圖片驗證接入客戶送出流程，連接甲方資料表單、手寫與上傳及確認預覽；不能只依賴前端驗證。
+4. 將已通過儲存核心測試的租約／冪等重試接上正式報價版型產檔器，驗證實際PDF內容與視覺，加入安全暫存清理。不能把測試產檔回應當成正式PDF驗收。
 5. 客戶API與編輯台API的來源、驗證及回應必須隔離；no-store、no-referrer、禁止索引。不可因新增客戶網域就開放原本同步API。
 6. 正式migration前先呈現影響與備份／回復方法；舊站／新站遷移驗收未完成，不提前私人化或關閉舊站。
 
@@ -61,5 +75,7 @@ R2成功但D1回應失敗時，保留該私人物件，不直接刪除：D1可�
 `node tests/signing-images.cjs` 使用本機Chromium實際解碼與重畫PNG，拒絕損壞PNG及超限尺寸，確認無外部圖片請求。它使用Playwright adapter測試相同瀏覽器驗證函式，不等於正式Browser Run部署驗收。
 
 先於 `cloud-sync` 執行 `wrangler deploy --dry-run --outdir ../tmp/signing-worker-bundle`，再於專案根目錄執行 `node tests/signing-runtime.cjs`。測試使用已安裝Miniflare及workerd、暫存且不持久化的本機D1/R2，實際驗證migration觸發器、建立／讀取／撤銷HTTP、單次claim、R2條件寫入。只播種測試帳號，不呼叫遠端D1/R2或Browser Run。
+
+`tests/signing-submit.test.mjs` 驗證相同／不同內容重試、兩客戶競爭、產檔租約、舊工作完成、產檔／R2故障、D1回應遺失、撤銷及到期、甲乙雙方同檔讀取。`node tests/signing-submit-runtime.cjs` 另在隔離workerd執行相同儲存核心；測試harness只在tmp打包，沒有正式認證入口，不可部署。產檔回應是明確標示的測試位元組，**不是實際PDF版型驗收**。
 
 參考：[D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)、[R2 Workers API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)。

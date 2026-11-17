@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
 import worker from '../cloud-sync/src/index.js';
-import {signingSha256} from '../cloud-sync/src/signing-store.js';
+import {signingSha256,SIGNING_SQL} from '../cloud-sync/src/signing-store.js';
 import {readSigningJson,validateSigningCreate,MAX_SIGNING_BODY_BYTES} from '../cloud-sync/src/signing-validation.js';
 import {signingBody} from './fixtures/signing.mjs';
 
@@ -19,7 +19,7 @@ async function fixture(t) {
       calls.push({sql,values});const params=Object.fromEntries(values.map((value,i)=>['?'+(i+1),value]));
       return {async first(){return sql.includes('FROM cloud_sessions')?(sessions.get(values[0])||null):(sqlite.prepare(sql).get(params)||null);},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(params).changes)}};}};
     }};}},
-    STAMP_BUCKET:{async put(key,contents,options){assert.equal(options.onlyIf.etagDoesNotMatch,'*');objects.set(key,contents);return {key};},async get(key){const text=objects.get(key);return text===undefined?null:{size:Buffer.byteLength(text),async text(){return text;}};}}
+    STAMP_BUCKET:{async put(key,contents,options){assert.equal(options.onlyIf.etagDoesNotMatch,'*');objects.set(key,contents);return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}}
   };
   return {sqlite,env,calls,objects};
 }
@@ -106,6 +106,29 @@ test('guest cannot use a Google bearer session or mutate the shared snapshot',as
   assert.equal((await worker.fetch(request('/api/signing/guest'),env)).status,404);
   assert.equal((await worker.fetch(new Request('https://api.test/api/signing/guest',{method:'POST',headers:{Origin:'https://quote.kinostudio.tw'}}),env)).status,405);
   assert.equal(objects.size,0);
+});
+
+test('guest and owner download identical archived PDF bytes; revocation only blocks guest access',async t=>{
+  const {env,sqlite,objects}=await fixture(t);
+  const share=await (await worker.fetch(request('/api/signing','POST',signingBody()),env)).json();
+  const guestPdf=()=>new Request('https://api.test/api/signing/guest/pdf',{headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+share.token}});
+  assert.equal((await worker.fetch(guestPdf(),env)).status,409);
+  const hash=await signingSha256(share.token),at=Date.now();
+  sqlite.prepare(SIGNING_SQL.claim).get({'?1':hash,'?2':at,'?3':'test-submission','?4':'a'.repeat(64),'?5':'b'.repeat(64)});
+  sqlite.prepare(SIGNING_SQL.lease).get({'?1':share.id,'?2':at,'?3':'test-lease'});
+  const bytes=new TextEncoder().encode('%PDF-1.7\nOPAQUE-TEST-ARCHIVE\n%%EOF');
+  const pdfHash=await signingSha256(bytes);objects.set('test-final.pdf',bytes);
+  sqlite.prepare(SIGNING_SQL.finish).get({'?1':share.id,'?2':'a'.repeat(64),'?3':'test-final.pdf','?4':pdfHash,'?5':at,'?6':'test-lease'});
+  const guest=await worker.fetch(guestPdf(),env),owner=await worker.fetch(request('/api/signing/'+share.id+'/pdf'),env);
+  assert.equal(guest.status,200);assert.equal(owner.status,200);
+  assert.deepEqual(new Uint8Array(await guest.arrayBuffer()),bytes);
+  assert.deepEqual(new Uint8Array(await owner.arrayBuffer()),bytes);
+  assert.equal(guest.headers.get('x-content-sha256'),pdfHash);
+  assert.match(guest.headers.get('content-disposition'),/TEST-ONLY-001\.pdf/);
+  assert.equal((await worker.fetch(request('/api/signing/'+share.id+'/pdf','GET',undefined,otherToken),env)).status,404);
+  await worker.fetch(request('/api/signing/'+share.id,'DELETE'),env);
+  assert.equal((await worker.fetch(guestPdf(),env)).status,404);
+  assert.equal((await worker.fetch(request('/api/signing/'+share.id+'/pdf'),env)).status,200);
 });
 
 test('streamed JSON is bounded even without content-length and malformed JSON fails closed',async()=>{

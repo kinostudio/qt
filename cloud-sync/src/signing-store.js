@@ -11,6 +11,7 @@ export const SIGNING_SQL = Object.freeze({
     VALUES (?1,?2,?3,?4,?5,?6,?7)`,
   guest: `SELECT * FROM quote_signing_requests
     WHERE token_hash=?1 AND revoked_at IS NULL AND expires_at>?2 LIMIT 1`,
+  lookup: `SELECT * FROM quote_signing_requests WHERE token_hash=?1 LIMIT 1`,
   owner: `SELECT * FROM quote_signing_requests WHERE workspace_id=?1 AND id=?2 LIMIT 1`,
   revoke: `UPDATE quote_signing_requests SET revoked_at=?3
     WHERE workspace_id=?1 AND id=?2 AND revoked_at IS NULL`,
@@ -18,12 +19,18 @@ export const SIGNING_SQL = Object.freeze({
     SET status='submitting',submission_key=?3,submission_sha256=?4,idempotency_hash=?5,submitted_at=?2
     WHERE token_hash=?1 AND status='pending' AND revoked_at IS NULL AND expires_at>?2 RETURNING *`,
   finish: `UPDATE quote_signing_requests
-    SET status='signed',signed_pdf_key=?3,signed_pdf_sha256=?4,signed_at=?5
-    WHERE id=?1 AND status='submitting' AND submission_sha256=?2 AND revoked_at IS NULL RETURNING *`
+    SET status='signed',signed_pdf_key=?3,signed_pdf_sha256=?4,signed_at=?5,render_lease_id=NULL,render_lease_until=NULL
+    WHERE id=?1 AND status='submitting' AND submission_sha256=?2 AND revoked_at IS NULL
+      AND render_lease_id=?6 AND render_lease_until>?5 RETURNING *`,
+  lease: `UPDATE quote_signing_requests SET render_lease_id=?3,render_lease_until=?2+120000
+    WHERE id=?1 AND status='submitting' AND revoked_at IS NULL
+      AND (render_lease_until IS NULL OR render_lease_until<=?2) RETURNING *`,
+  release: `UPDATE quote_signing_requests SET render_lease_id=NULL,render_lease_until=NULL
+    WHERE id=?1 AND status='submitting' AND render_lease_id=?2`
 });
 
 export async function signingSha256(value) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  const digest = await crypto.subtle.digest('SHA-256', typeof value==='string'?new TextEncoder().encode(value):value);
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
@@ -33,7 +40,7 @@ function validWorkspace(workspaceId) {
   }
 }
 
-async function tokenHash(token) {
+export async function signingTokenHash(token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
     throw new SigningError('找不到或連結已失效', 404);
   }
@@ -63,14 +70,14 @@ export async function createSigningRequest(db, bucket, workspaceId, snapshot, li
   });
   if (!object) throw new SigningError('無法建立固定待簽版本', 409);
   // Keep the private object if D1 reports an error: the commit outcome may be uncertain.
-  await db.prepare(SIGNING_SQL.create).bind(id, workspaceId, await tokenHash(token), key, hash, now, expiresAt).run();
+  await db.prepare(SIGNING_SQL.create).bind(id, workspaceId, await signingTokenHash(token), key, hash, now, expiresAt).run();
   return { id, token, snapshotSha256: hash, expiresAt };
 }
 
 export async function loadSigningSnapshot(db, bucket, token, now = Date.now()) {
-  const row = await db.prepare(SIGNING_SQL.guest).bind(await tokenHash(token), now).first();
+  const row = await db.prepare(SIGNING_SQL.guest).bind(await signingTokenHash(token), now).first();
   if (!row) throw new SigningError('找不到或連結已失效', 404);
-  return { id: row.id, status: row.status, expiresAt: row.expires_at, snapshot: await readSnapshotObject(bucket,row) };
+  return { id: row.id, status: row.status, expiresAt: row.expires_at, snapshotSha256:row.snapshot_sha256, snapshot: await readSnapshotObject(bucket,row) };
 }
 
 async function readSnapshotObject(bucket,row) {

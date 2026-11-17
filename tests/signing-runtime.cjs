@@ -31,7 +31,8 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
     assert.equal((await db.prepare(SIGNING_SQL.claim).bind(...claimArgs).first()).status,'submitting');
     assert.equal(await db.prepare(SIGNING_SQL.claim).bind(...claimArgs).first(),null);
     await assert.rejects(db.prepare("UPDATE quote_signing_requests SET snapshot_key='changed'").run(),/immutable signing snapshot/);
-    assert.equal((await db.prepare(SIGNING_SQL.finish).bind(share.id,'a'.repeat(64),'quote-signing/v1/local-test/final.pdf','c'.repeat(64),Date.now()).first()).status,'signed');
+    await db.prepare(SIGNING_SQL.lease).bind(share.id,Date.now(),'test-render-lease').first();
+    assert.equal((await db.prepare(SIGNING_SQL.finish).bind(share.id,'a'.repeat(64),'quote-signing/v1/local-test/final.pdf','c'.repeat(64),Date.now(),'test-render-lease').first()).status,'signed');
     await assert.rejects(db.prepare("UPDATE quote_signing_requests SET signed_pdf_key='replacement.pdf'").run(),/immutable signed PDF/);
     assert.equal((await mf.dispatchFetch('https://api.test/api/signing/'+share.id,{method:'DELETE',headers:{Origin:'https://qt.kinostudio.tw',Authorization:'Bearer '+session}})).status,200);
     assert.equal((await mf.dispatchFetch('https://api.test/api/signing/guest',{headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+share.token}})).status,404);

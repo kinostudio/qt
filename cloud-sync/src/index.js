@@ -2,7 +2,7 @@ import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readPdfPayload, renderPrintPdf, PRINT_FONT_URL } from './pdf-render.js';
 import { guardSql } from './sync-guard.js';
 import { SigningError } from './signing-store.js';
-import { handleSigningGuest, handleSigningOwner } from './signing-api.js';
+import { handleSigningGuest, handleSigningOwner, isSigningGuestPath } from './signing-api.js';
 import { Buffer } from 'node:buffer';
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -34,7 +34,7 @@ const getCorsHeaders = (request, env) => {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  if (new URL(request.url).pathname === '/api/signing/guest' && env.SIGNING_ENABLED === 'true') {
+  if (isSigningGuestPath(new URL(request.url).pathname) && env.SIGNING_ENABLED === 'true') {
     allowedOrigins.push('https://quote.kinostudio.tw');
   }
 
@@ -886,7 +886,7 @@ const routeRequest = async (request, env) => {
 
   if (url.pathname === '/api/signing' || url.pathname.startsWith('/api/signing/')) {
     if (env.SIGNING_ENABLED !== 'true') throw new SigningError('客戶簽署尚未啟用',404);
-    if (url.pathname === '/api/signing/guest') return handleSigningGuest(request,env);
+    if (isSigningGuestPath(url.pathname)) return handleSigningGuest(request,env);
   }
 
   const auth = await getAuthContext(request, env);

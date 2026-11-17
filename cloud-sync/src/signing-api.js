@@ -1,10 +1,21 @@
 import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapshotForOwner,revokeSigningRequest} from './signing-store.js';
 import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './signing-validation.js';
+import {loadSignedPdfForGuest,loadSignedPdfForOwner} from './signing-submit.js';
+
+export const isSigningGuestPath=path=>path==='/api/signing/guest' || path==='/api/signing/guest/pdf';
 
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
   'referrer-policy':'no-referrer','x-robots-tag':'noindex, nofollow','x-content-type-options':'nosniff'
 }});
+
+function pdfReply(file,quotationId) {
+  const filename=String(quotationId||'quotation').trim().replace(/[\\/:*?"<>|\x00-\x1f]/g,'-').slice(0,180)+'.pdf';
+  return new Response(file.bytes,{headers:{'content-type':'application/pdf','cache-control':'no-store',
+    'content-disposition':`attachment; filename="quotation.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    'referrer-policy':'no-referrer','x-robots-tag':'noindex, nofollow','x-content-type-options':'nosniff',
+    'x-content-sha256':file.sha256,'access-control-expose-headers':'x-content-sha256'}});
+}
 
 async function decodeImagesUsingBrowser(env,snapshot) {
   const q=snapshot.quotation;
@@ -26,6 +37,11 @@ export async function handleSigningGuest(request,env) {
   if(request.method!=='GET') throw new SigningError('不支援此操作',405);
   const header=request.headers.get('authorization')||'';
   const token=header.startsWith('Quote ')?header.slice(6):'';
+  if(new URL(request.url).pathname==='/api/signing/guest/pdf') {
+    const file=await loadSignedPdfForGuest(env.DB,env.STAMP_BUCKET,token);
+    const fixed=await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token);
+    return pdfReply(file,fixed.snapshot.quotation.header.quotationId);
+  }
   return reply(await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token));
 }
 
@@ -42,9 +58,15 @@ export async function handleSigningOwner(request,env,auth,decodeImages=decodeIma
     const share=await createSigningRequest(env.DB,env.STAMP_BUCKET,auth.workspaceId,fixedSnapshot,lifetimeDays);
     return reply({...share,url:`https://quote.kinostudio.tw/s/${share.token}`},201);
   }
-  const match=/^\/api\/signing\/([a-f0-9-]{36})$/.exec(path);
+  const match=/^\/api\/signing\/([a-f0-9-]{36})(\/pdf)?$/.exec(path);
   if(!match) throw new SigningError('找不到簽署操作',404);
   const id=match[1];
+  if(match[2]) {
+    if(request.method!=='GET') throw new SigningError('不支援此操作',405);
+    const file=await loadSignedPdfForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id);
+    const fixed=await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id);
+    return pdfReply(file,fixed.snapshot.quotation.header.quotationId);
+  }
   if(request.method==='GET') return reply(await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id));
   if(request.method==='DELETE') {
     if(!await revokeSigningRequest(env.DB,auth.workspaceId,id)) throw new SigningError('找不到可撤銷的待簽版本',404);

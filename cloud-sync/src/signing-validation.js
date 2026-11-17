@@ -116,6 +116,21 @@ export function validateSigningCreate(body) {
   return {snapshot,lifetimeDays:days};
 }
 
+export function validateSigningSubmission(body) {
+  object(body,['idempotencyKey','snapshotSha256','clientCompany','clientContact','clientTaxId','clientPhone','signatureImage','signatureKind','consent'],'客戶簽署');
+  if(typeof body.idempotencyKey!=='string' || !/^[A-Za-z0-9_-]{20,80}$/.test(body.idempotencyKey)) invalid('送出識別碼');
+  if(typeof body.snapshotSha256!=='string' || !/^[a-f0-9]{64}$/.test(body.snapshotSha256)) invalid('報價版本');
+  if(body.consent!==true) throw new SigningError('請先預覽並確認同意簽署');
+  for(const key of ['clientCompany','clientContact','clientTaxId','clientPhone']) text(body[key],200,'甲方資料');
+  if(!body.clientCompany.trim() && !body.clientContact.trim()) invalid('甲方姓名或公司');
+  if(!['handwritten','stamp'].includes(body.signatureKind)) invalid('簽署方式');
+  png(body.signatureImage,'甲方簽名或印章');
+  if(!body.signatureImage) invalid('甲方簽名或印章');
+  return {idempotencyKey:body.idempotencyKey,submission:{version:1,snapshotSha256:body.snapshotSha256,
+    clientCompany:body.clientCompany,clientContact:body.clientContact,clientTaxId:body.clientTaxId,clientPhone:body.clientPhone,
+    signatureImage:body.signatureImage,signatureKind:body.signatureKind,consent:true}};
+}
+
 export async function rasterizeSigningImages(page, snapshot) {
   const q=snapshot.quotation;
   const targets=[[q,'logo'],[q.signature,'clientSigImg'],[q.signature,'vendorSigImg'],[q.signature.clientStamp,'sourceDataUrl'],[q.signature.vendorStamp,'sourceDataUrl']].filter(([object,key])=>object[key]);
