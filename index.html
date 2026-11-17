@@ -839,7 +839,7 @@
             position: relative;
             width: 100%;
             aspect-ratio: 88 / 29.2;
-            overflow: hidden;
+            overflow: visible;
             background: white;
             touch-action: none;
         }
@@ -1890,6 +1890,47 @@
             if (key === 'stamps') return { title: record.name || '未命名印章', meta: record.cloudState === 'synced' || record.versionId ? '印章資產' : '本機印章', detail: `${record.originalWidthPx || 0} × ${record.originalHeightPx || 0} px` };
             return { title: record.category || '未分類條款', meta: record.isCore ? `原始第 ${record.coreOrder || '-'} 條` : `嚴重度：${record.severity || 1}`, detail: truncateCloudPreview(record.text || '條款內容尚未填寫', 220) };
         };
+        const cloudContentFields = record => {
+            const fields = {};
+            const labels = {name:'名稱',text:'條款內容',category:'條款分類',severity:'嚴重度',sortOrder:'排列順序',title:'標題',quotationId:'報價單號',quotationDate:'報價日期',validity:'有效期限',validityLabel:'期限標題',quotationType:'報價模式',desc:'服務項目',qty:'數量',unit:'單位',price:'單價',summaryQty:'摘要數量',summaryUnit:'摘要單位',condition:'付款條件',percent:'比例',phase:'付款階段',notes:'條款',taxMode:'稅額計算',clientCompany:'甲方公司',clientContact:'甲方聯絡人',clientPhone:'甲方電話',clientTaxId:'甲方統編',vendorCompany:'乙方公司',vendorContact:'乙方聯絡人',vendorPhone:'乙方電話',vendorTaxId:'乙方統編',widthMm:'寬度（mm）',heightMm:'高度（mm）',xMm:'水平位置',yMm:'垂直位置',opacity:'透明度',rotationDeg:'旋轉角度'};
+            const groups = {data:'',header:'報價資訊',project:'專案概況',categories:'報價分類',items:'服務細項',signature:'簽署資訊',payment:'付款方式',terms:'付款階段',notes:'專案條款',bank:'收款資訊'};
+            const walk = (value,path='') => {
+                if (!value || typeof value !== 'object') return;
+                Object.entries(value).forEach(([key,v]) => {
+                    if (['id','categoryId','updatedAt','schemaVersion','cloudState','cloudName','versionId','assetId','assetVersionId','dataUrl','sourceDataUrl','file','isCore','coreOrder'].includes(key)) return;
+                    if (key === 'value' && value.label) fields[path+' / '+value.label] = String(v ?? '');
+                    else if (v && typeof v === 'object') walk(v,[path,groups[key] ?? (Array.isArray(value) ? '第 '+(Number(key)+1)+' 項' : '')].filter(Boolean).join(' / '));
+                    else if (labels[key] || Array.isArray(value)) fields[[path,labels[key] || ('第 '+(Number(key)+1)+' 項')].filter(Boolean).join(' / ')] = String(v ?? '');
+                });
+            };
+            walk(record);
+            return fields;
+        };
+        const HighlightCloudText = ({value,other}) => {
+            const a=String(value ?? '（未設定）'), b=String(other ?? '');
+            let start=0,end=0;
+            while(start<a.length && start<b.length && a[start]===b[start]) start++;
+            while(end<a.length-start && end<b.length-start && a[a.length-1-end]===b[b.length-1-end]) end++;
+            return <>{a.slice(0,start)}<mark className="rounded bg-amber-100 text-amber-950">{a.slice(start,a.length-end)}</mark>{end ? a.slice(-end) : ''}</>;
+        };
+        const CloudChangeContent = ({kind,detail}) => {
+            const local=detail.local, remote=detail.remote;
+            if (kind === 'stamps') return <div className="mt-2 grid grid-cols-2 gap-2">{[['本機',local],['雲端',remote]].map(([label,asset])=><div key={label} className="rounded-lg border bg-white p-2 text-center text-xs"><p>{label}</p>{asset?.dataUrl ? <img src={asset.dataUrl} alt={label+'印章縮圖'} className="mx-auto h-20 w-full object-contain"/> : <p className="py-6 text-gray-400">{asset ? '縮圖無法載入' : '尚無印章'}</p>}<p>{asset?.name || '—'}</p></div>)}</div>;
+            if (!remote) return <div className="mt-2 text-xs leading-relaxed"><p className="font-bold text-sky-800">將新增{CLOUD_COLLECTION_LABELS[kind]}「{getCloudRecordPreview(kind,local).title}」</p>{kind === 'clauses' ? <p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-sky-50 p-3">{local.text}</p> : kind === 'templates' ? <div className="mt-2 space-y-2">{local.notes?.map((text,i)=><p key={i} className="whitespace-pre-wrap">{i+1}. {text}</p>)}</div> : <p className="mt-1 text-gray-500">{getCloudRecordPreview(kind,local).meta} · {getCloudRecordPreview(kind,local).detail}</p>}</div>;
+            const a=cloudContentFields(local),b=cloudContentFields(remote);
+            const keys=[...new Set([...Object.keys(a),...Object.keys(b)])].filter(k=>a[k]!==b[k]);
+            return <div className="mt-2 space-y-3">{keys.length ? keys.map(k=><div key={k} className="rounded-lg border border-amber-200 p-3 text-xs"><p className="mb-2 font-bold text-amber-900">修改：{k}</p><div className="grid gap-2 sm:grid-cols-2">{[['雲端（目前）',b[k],a[k]],['本機（同步後）',a[k],b[k]]].map(([label,value,other])=><div key={label} className="min-w-0"><p className="mb-1 text-gray-500">{label}</p><p className="whitespace-pre-wrap break-words leading-relaxed"><HighlightCloudText value={value} other={other}/></p></div>)}</div></div>) : <p className="text-xs text-gray-500">版本或顯示設定不同，主要文字內容相同。</p>}</div>;
+        };
+        const CloudCollectionSummary = ({item}) => {
+            const [open,setOpen]=useState(false), [hover,setHover]=useState(false);
+            const visible=open || hover;
+            return <div onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} className={`rounded-2xl border p-4 ${item.changed ? 'border-amber-200 bg-amber-50/60' : 'border-emerald-100 bg-emerald-50/50'}`}>
+                <div className="flex justify-between gap-2 text-sm font-bold"><p>{CLOUD_COLLECTION_LABELS[item.key]}</p><span>{item.changed ? `${item.localOnly+item.remoteOnly+item.conflicts} 筆差異` : '一致'}</span></div>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">{[['本機',item.localCount],['雲端',item.remoteCount]].map(([side,count])=><button key={side} type="button" aria-expanded={visible} onFocus={()=>setHover(true)} onBlur={()=>setHover(false)} onClick={()=>setOpen(v=>!v)} className="rounded-lg bg-white p-2 text-left focus:ring-2 focus:ring-kino">{side}<strong className="float-right">{count}</strong></button>)}</div>
+                <p className="mt-2 text-xs text-gray-500">新增 {item.localOnly}・修改 {item.conflicts}・僅雲端 {item.remoteOnly}</p>
+                {visible && <div className="mt-3 space-y-2 border-t pt-3 text-xs" aria-label={CLOUD_COLLECTION_LABELS[item.key]+'差異摘要'}>{item.details.map(d=><div key={d.id}><strong className={d.remote ? 'text-amber-800' : 'text-sky-800'}>{d.remote ? '修改' : '新增'}：{getCloudRecordPreview(item.key,d.local).title}</strong>{d.remote && <p className="mt-1 text-gray-600">{Object.keys(cloudContentFields(d.local)).filter(k=>cloudContentFields(d.local)[k]!==cloudContentFields(d.remote)[k]).join('、') || '印章圖樣或設定不同'}</p>}</div>)}{item.remoteOnlyRecords?.map(r=><p key={r.id} className="text-gray-600">僅雲端：{getCloudRecordPreview(item.key,r).title}（會保留）</p>)}{!item.changed && <p className="text-emerald-700">本機與雲端內容相同，無需同步。</p>}</div>}
+            </div>;
+        };
         const CloudSyncPreviewModal = ({ account, summary, selection, pendingDeleteCount, includeDeletes, onToggleItem, onSelectAll, onClearSelection, onToggleDeletes, onCancel, onRemoteOnly, onMerge, status }) => {
             const changedCount = summary.reduce((total, item) => total + item.details.length, 0);
             const selectedCount = summary.reduce((total, item) => total + (selection?.[item.key]?.length || 0), 0);
@@ -1902,11 +1943,7 @@
                     </div>
                     <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 text-xs leading-relaxed text-blue-900"><i className="fas fa-shield-halved mr-1.5"></i>請勾選要以本機版本合併到雲端的項目。未勾選的本機差異會留在本機，不會被雲端覆寫；僅雲端項目也會保留。</div>
                     <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                        {summary.map(item => <div key={item.key} className={`rounded-2xl border p-4 ${item.changed ? 'border-amber-200 bg-amber-50/60' : 'border-emerald-100 bg-emerald-50/50'}`}>
-                            <div className="flex items-center justify-between"><p className="text-sm font-black text-gray-800">{CLOUD_COLLECTION_LABELS[item.key]}</p><span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${item.changed ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>{item.changed ? `${item.details.length} 筆差異` : '一致'}</span></div>
-                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs"><span className="rounded-lg bg-white px-2.5 py-2 text-gray-500">本機 <strong className="float-right text-gray-900">{item.localCount}</strong></span><span className="rounded-lg bg-white px-2.5 py-2 text-gray-500">雲端 <strong className="float-right text-gray-900">{item.remoteCount}</strong></span></div>
-                            <p className="mt-2 text-[11px] leading-relaxed text-gray-500">僅本機 {item.localOnly}・僅雲端 {item.remoteOnly}・內容不同 {item.conflicts}</p>
-                        </div>)}
+                        {summary.map(item => <CloudCollectionSummary key={item.key} item={item}/>)}
                     </div>
                     {changedCount > 0 && <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm text-gray-900">選擇本機差異</strong><p className="mt-1 text-[11px] text-gray-500">已勾選 {selectedCount} / {changedCount} 筆</p></div><div className="flex gap-2"><button type="button" onClick={onSelectAll} className="rounded-lg border border-kino/25 bg-white px-3 py-2 text-xs font-bold text-kino">全選本機差異</button><button type="button" onClick={onClearSelection} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-500">清除勾選</button></div></div>
@@ -1915,19 +1952,7 @@
                                 const checked = Boolean(selection?.[item.key]?.includes(detail.id));
                                 const localPreview = getCloudRecordPreview(item.key, detail.local);
                                 const remotePreview = getCloudRecordPreview(item.key, detail.remote);
-                                const differences = [];
-                                const show = v => v === undefined ? '（無）' : typeof v === 'string' && v.startsWith('data:') ? '（圖片）' : JSON.stringify(v);
-                                const diff = (a,b,path) => {
-                                    if (a === b) return;
-                                    if ((a == null || typeof a === 'object') && (b == null || typeof b === 'object') && (a || b)) {
-                                        for (const k of new Set([...Object.keys(a||{}),...Object.keys(b||{})])) {
-                                            if (!path && ['updatedAt','dataUrl','cloudState'].includes(k)) continue;
-                                            diff(a?.[k],b?.[k],path ? path+'.'+k : k);
-                                        }
-                                    } else differences.push(path+'：雲端 '+show(b)+' → 本機 '+show(a));
-                                };
-                                diff(detail.local,detail.remote,'');
-                                return <label key={detail.id} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${checked ? 'border-kino/40 bg-kino/5 ring-1 ring-kino/10' : 'border-gray-100 bg-gray-50/70 hover:border-kino/25'}`}><input type="checkbox" checked={checked} onChange={() => onToggleItem(item.key, detail.id)} className="mt-1 h-4 w-4 shrink-0 accent-kino" /><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><strong className="text-xs text-gray-900">{localPreview.title}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${detail.status === 'local-only' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-800'}`}>{detail.status === 'local-only' ? '僅本機新增' : '本機／雲端內容不同'}</span></span><span className="mt-1 block text-[11px] leading-relaxed text-gray-500">本機：{localPreview.meta}{localPreview.detail ? ` · ${localPreview.detail}` : ''}</span>{detail.remote && <span className="mt-1 block text-[11px] leading-relaxed text-gray-400">雲端：{remotePreview.meta}{remotePreview.detail ? ` · ${remotePreview.detail}` : ''}</span>}{item.key === 'stamps' ? <span className="mt-2 grid grid-cols-2 gap-2">{[['本機', detail.local], ['雲端', detail.remote]].map(([label, asset]) => <span key={label} className="rounded-lg border border-gray-200 bg-white p-2 text-center text-xs text-gray-500"><span className="block">{label}</span>{asset?.dataUrl ? <img src={asset.dataUrl} alt={label + '印章縮圖'} className="mx-auto mt-1 h-20 w-full object-contain" /> : <span className="flex h-20 items-center justify-center">{asset ? '縮圖無法載入' : '尚無印章'}</span>}<span className="block break-words">{asset?.name || '—'}</span></span>)}</span> : <span className="block whitespace-pre-wrap break-all text-xs">{differences.join('\n')}</span>}</span></label>;
+                                return <div key={detail.id} className={`rounded-xl border p-3 ${checked ? 'border-kino/40 bg-kino/5' : 'border-gray-100 bg-gray-50/70'}`}><label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={checked} onChange={() => onToggleItem(item.key,detail.id)} className="mt-1 h-4 w-4 shrink-0 accent-kino"/><span className="min-w-0"><strong className="text-sm text-gray-900">{localPreview.title}</strong><span className={`ml-2 rounded-full px-2 py-1 text-xs font-bold ${detail.remote ? 'bg-amber-100 text-amber-800' : 'bg-sky-100 text-sky-800'}`}>{detail.remote ? '修改' : '新增'}</span></span></label><CloudChangeContent kind={item.key} detail={detail}/></div>;
                             })}</div></section> : null)}
                         </div>
                     </div>}
@@ -2464,7 +2489,11 @@
                                         <label>圖層<select value={draft.layer} onChange={event => updateDraft({ layer: event.target.value })}><option value="bottom">置底：低於文字／格線</option><option value="top">置頂：高於文字／格線</option></select></label>
                                         <label>混合模式<select value={draft.blendMode} onChange={event => updateDraft({ blendMode: event.target.value })}><option value="normal">一般</option><option value="multiply">Multiply</option></select></label>
                                     </div>
-                                    <label className="flex items-center gap-2"><input type="checkbox" checked={draft.allowOverflow} onChange={event => updateDraft({ allowOverflow: event.target.checked })} />允許印章跨出簽署格</label>
+                                    <div className="rounded-lg border border-kino/20 bg-kino/5 p-3">
+                                        <button type="button" onClick={()=>updateDraft({allowOverflow:true,yMm:-SIGNATURE_CELL_MM.height/2,layer:'top',blendMode:'multiply'})} className="rounded-lg bg-kino px-3 py-2 text-xs font-bold text-white">向上蓋住公司資訊</button>
+                                        <p className="mt-2 text-xs text-slate-500">先將印章移到簽章格上緣，再拖曳或調整 Y 位移；負值往上。色彩增值模式可減少白底遮住文字。</p>
+                                        <label className="mt-2 flex items-center gap-2"><input type="checkbox" checked={draft.allowOverflow} onChange={event => updateDraft({ allowOverflow: event.target.checked })} />允許跨格蓋住上方文字</label>
+                                    </div>
                                     <div>
                                         <p className="mb-2 text-xs font-bold text-slate-600">常用尺寸</p>
                                         <div className="flex flex-wrap gap-2">
@@ -2908,6 +2937,8 @@
             
             // Toast State
             const [toast, setToast] = useState(null);
+            const [syncNotice,setSyncNotice]=useState('');
+            useEffect(()=>{if(!syncNotice) return; const timer=setTimeout(()=>setSyncNotice(''),10000); return ()=>clearTimeout(timer);},[syncNotice]);
             const showToast = (message) => {
                 setToast(message);
                 setTimeout(() => setToast(null), 2000);
@@ -3963,7 +3994,7 @@
                     }
                 });
                 remoteMap.forEach((record, id) => { if (!localMap.has(id)) remoteOnly += 1; });
-                return { key, localCount: localRecords.length, remoteCount: remoteRecords.length, localOnly, remoteOnly, conflicts, details, changed: Boolean(localOnly || remoteOnly || conflicts) };
+                return { key, localCount: localRecords.length, remoteCount: remoteRecords.length, localOnly, remoteOnly, conflicts, details, remoteOnlyRecords:remoteRecords.filter(record=>!localMap.has(record.id)), changed: Boolean(localOnly || remoteOnly || conflicts) };
             };
             const buildCloudSyncSummary = remote => [
                 buildCloudCollectionDiff('projects', projectLibrary, remote.projects),
@@ -4210,13 +4241,15 @@
                     const [syncResult, stampResult] = await Promise.all([cloudRequest('/api/sync'), cloudRequest('/api/stamps')]);
                     const remote = normalizeRemoteCloudData({ ...syncResult, stamps: stampResult.assets || [] });
                     const merged = mergeRemoteWithLocalSelection(remote, localSnapshotForMerge, selectionForMerge, !includeCloudDeletes);
-                    const describe = r => (localSnapshot[r.key]?.find(v=>v.id===r.id)?.name || preflight[r.key]?.find(v=>v.id===r.id)?.name || CLOUD_COLLECTION_LABELS[r.key])+' ('+r.id+')';
                     for (const r of outcome.skipped.filter(r=>r.action==='save')) {
                         const local = localSnapshot[r.key].find(v=>v.id===r.id);
                         if (local) merged[r.key] = [...merged[r.key].filter(v=>v.id!==r.id),local];
                     }
                     await applyRemoteCloudData(merged, '', { clearDeletionQueue: includeCloudDeletes });
-                    window.alert(['D1 同步結果','實際寫入／刪除：'+(outcome.written.map(describe).join('、') || '無'),'略過：'+(outcome.skipped.map(describe).join('、') || '無')].join('\n'));
+                    const units={projects:'個專案',templates:'份條款範本',categories:'個分類',clauses:'條條款',stamps:'顆印章'};
+                    const countRecords=records=>Object.entries(units).map(([key,unit])=>{const n=records.filter(r=>r.key===key).length;return n ? n+' '+unit : '';}).filter(Boolean).join('、');
+                    const saved=outcome.written.filter(r=>r.action==='save'), removed=outcome.written.filter(r=>r.action==='delete');
+                    setSyncNotice([saved.length ? '已同步 '+countRecords(saved) : '',removed.length ? '已刪除 '+countRecords(removed) : '',assetMap.size ? '已同步 '+assetMap.size+' 顆印章' : '',outcome.skipped.length ? '有 '+outcome.skipped.length+' 個項目未更新；本機內容已保留，請重新比對。' : '',!outcome.written.length && !assetMap.size && !outcome.skipped.length ? '沒有需要更新的項目。' : ''].filter(Boolean).join('。'));
                     setCloudSyncPreview(null);
                     setCloudSyncSelection(makeEmptyCloudSyncSelection());
                 } catch (error) {
@@ -4512,6 +4545,7 @@
             return (
                 <div className={`quotation-document quotation-${data.quotationType || 'quick'}`} data-quotation-type={data.quotationType || 'quick'}>
                     {toast && <Toast message={toast} />}
+                    {syncNotice && <div role="status" aria-live="polite" className="no-print pointer-events-none fixed bottom-5 left-1/2 z-[200] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center gap-3 rounded-xl bg-gray-900 p-4 text-sm text-white shadow-xl"><span className="min-w-0 flex-1">{syncNotice}</span><button type="button" onClick={()=>setSyncNotice('')} className="pointer-events-auto shrink-0 rounded px-2 py-1 text-sky-200" aria-label="關閉同步通知">關閉</button></div>}
                     {showCloudKeyModal && <CloudSyncKeyModal onSave={saveCloudSyncKey} onClose={() => setShowCloudKeyModal(false)} googleClientId={googleClientId} onGoogleCredential={handleGoogleCredential} authUser={cloudAuthUser} lastAuthUser={lastCloudAuthUser} onLogout={logoutCloudAccount} onOpenVersions={openCloudVersions} authStatus={cloudAuthStatus} />}
                     {cloudSyncPreview && <CloudSyncPreviewModal
                         account={cloudSyncPreview.remote.user || cloudAuthUser}
