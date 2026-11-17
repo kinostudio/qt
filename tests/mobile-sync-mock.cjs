@@ -7,8 +7,10 @@ const assert = require('node:assert/strict');
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   const errors = [], uploads = [], calls = [];
+  const pdfOutputs=[];
   let activeUploads=0, maxActive=0;
   page.on('pageerror', e => {errors.push(e.message); console.error(e.message);});
+  if (process.env.TEST_PDF==='1') page.on('console',m=>{if(m.type()==='error')console.error(m.text());});
   const clause = {id:'test-clause',categoryId:'test-cat',category:'測試分類',text:'本機測試條款',severity:2,sortOrder:1,isCore:false,coreOrder:null,updatedAt:'2026-01-01T00:00:00Z'};
   const remoteClause = {...clause,text:'雲端測試條款'};
   const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a3sAAAAASUVORK5CYII=';
@@ -31,6 +33,24 @@ const assert = require('node:assert/strict');
       calls.push(request.method()+' '+new URL(url).pathname);
       let data={};
       if (url.endsWith('/api/config')) data={microsoftClientId:'mock-client'};
+      else if (url.endsWith('/api/pdf')) {
+        console.log('Rendering mock PDF');
+        const {renderPrintPdf}=await import('../cloud-sync/src/pdf-render.js');
+        const fs=require('node:fs');
+        const ctx=await browser.newContext({javaScriptEnabled:false});
+        const pdfPage=await ctx.newPage();
+        let handler;
+        const adapter={
+          setJavaScriptEnabled:async()=>{},setViewport:v=>pdfPage.setViewportSize({width:v.width,height:v.height}),
+          setRequestInterception:async()=>{await pdfPage.route('**/*',route=>handler({method:()=>route.request().method(),url:()=>route.request().url(),continue:()=>route.continue(),abort:()=>route.abort()}));},
+          on:(name,fn)=>{handler=fn;},emulateMediaType:media=>pdfPage.emulateMedia({media}),
+          setContent:(...args)=>pdfPage.setContent(...args),evaluate:fn=>pdfPage.evaluate(fn),$$eval:(...args)=>pdfPage.$$eval(...args),pdf:options=>pdfPage.pdf(options)
+        };
+        const {bytes,fields}=await renderPrintPdf(adapter,JSON.parse(request.postData()),'data:font/ttf;base64,'+fs.readFileSync('assets/pdf/NotoSansTC-Regular.ttf').toString('base64'));
+        pdfOutputs.push(bytes);
+        await ctx.close();
+        return route.fulfill({status:200,contentType:'application/pdf',headers:{'access-control-allow-origin':'*','access-control-expose-headers':'x-pdf-client-fields','x-pdf-client-fields':Buffer.from(JSON.stringify(fields)).toString('base64')},body:Buffer.from(bytes)});
+      }
       else if (url.endsWith('/api/auth/me')) data={user:{email:'test@example.invalid'}};
       else if (url.endsWith('/api/stamps')) data={assets:[{id:'mock-stamp',name:'雲端印章',versionId:'remote-version'}]};
       else if (url.includes('/api/stamps/mock-stamp/content')) return route.fulfill({status:200,contentType:'image/png',headers:{'access-control-allow-origin':'*'},body:Buffer.from(png,'base64')});
@@ -50,10 +70,16 @@ const assert = require('node:assert/strict');
       }
       return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:'{"value":[]}'});
     }
-    if (url.startsWith('file:') || url.includes('unpkg.com') || url.includes('cdn.tailwindcss.com')) return route.continue();
+    if (url.startsWith('https://qt.test/')) {
+      const path=require('node:path'), fs=require('node:fs');
+      const root=path.resolve(__dirname,'..'), target=path.resolve(root,'.'+decodeURIComponent(new URL(url).pathname));
+      if (!target.startsWith(root+path.sep)) throw Error('Invalid fixture path');
+      return route.fulfill({status:200,contentType:target.endsWith('.html')?'text/html':target.endsWith('.js')?'application/javascript':target.endsWith('.svg')?'image/svg+xml':target.endsWith('.ttf')?'font/ttf':'application/octet-stream',body:fs.readFileSync(target)});
+    }
+    if (url.includes('unpkg.com') || url.includes('cdn.tailwindcss.com')) return route.continue();
     return route.abort();
   });
-  await page.goto('file:///C:/Users/Aaron/Documents/Codex/KINO%20Quota/index.html',{waitUntil:'domcontentloaded',timeout:45000});
+  await page.goto('https://qt.test/index.html',{waitUntil:'domcontentloaded',timeout:45000});
   await page.getByRole('button',{name:'快速報價',exact:true}).first().waitFor({timeout:30000});
   await page.waitForTimeout(1000);
   console.log('TAILWIND',await page.evaluate(()=>({tailwind:typeof tailwind,styles:document.styleSheets.length})));
@@ -102,6 +128,28 @@ const assert = require('node:assert/strict');
   assert.equal(uploads.length,3,'手動 OneDrive 存檔未送出');
   assert.equal(JSON.parse(uploads[2].body).header.validity,'模擬較新內容');
   assert.deepEqual(errors,[]);
+  if (process.env.TEST_PDF==='1') {
+    await page.getByRole('button',{name:'關閉 OneDrive 設定'}).click();
+    const download=page.waitForEvent('download',{timeout:60000});
+    await page.getByRole('button',{name:'下載報價單 PDF',exact:true}).first().click();
+    const file=await download;
+    await file.saveAs('tmp/pdfs/client-form-quick.pdf');
+    const {PDFDocument}=require('../cloud-sync/node_modules/pdf-lib');
+    const doc=await PDFDocument.load(require('node:fs').readFileSync('tmp/pdfs/client-form-quick.pdf'));
+    assert.equal(doc.getForm().getFields().length,4);
+    assert.equal(pdfOutputs.length,1);
+    for (const [type,scale] of [['quick',70],['detailed',85]]) {
+      if(type==='detailed') await page.getByRole('button',{name:'詳細報價',exact:true}).first().click();
+      const next=page.waitForEvent('download',{timeout:60000});
+      await page.evaluate(scale=>window.dispatchEvent(new CustomEvent('quotation-download-pdf',{detail:{scale}})),scale);
+      const target='tmp/pdfs/client-form-'+type+'-'+scale+'.pdf';
+      await (await next).saveAs(target);
+      const pdf=await PDFDocument.load(require('node:fs').readFileSync(target));
+      assert.equal(pdf.getForm().getFields().length,4);
+      if(type==='detailed') assert.ok(pdf.getPageCount()>=2);
+    }
+    console.log('PASS 真實列印版型下載含四個甲方 AcroForm 欄位');
+  }
   console.log('PASS 差異面板顯示本機／雲端條款變化；模擬 OneDrive 自動儲存內容與資料夾正確。');
   console.log('MOCK calls:',calls.join(', '),'uploads:',uploads.length);
   await browser.close();

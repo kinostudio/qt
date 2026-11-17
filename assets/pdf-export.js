@@ -36,7 +36,7 @@
             try { styles.push([...sheet.cssRules].map(rule => rule.cssText).join('\n')); }
             catch { /* Remote icon sheets are unnecessary in the print tree. */ }
         }
-        return { html: copy.outerHTML, css: styles.join('\n'), quotationId: String(quotationId || 'quotation'), viewportWidth: window.innerWidth };
+        return { html: copy.outerHTML, css: styles.join('\n'), quotationId: String(quotationId || 'quotation'), viewportWidth: window.innerWidth, editableClientFields: true };
     }
     window.KinoPdfExport = {
         busy: false,
@@ -58,7 +58,18 @@
                     throw new Error(error.error || 'PDF 下載失敗，請稍後再試。');
                 }
                 if (!response.headers.get('content-type')?.includes('application/pdf')) throw new Error('PDF 回應格式不正確');
-                const blob = await response.blob();
+                let blob = await response.blob();
+                const encodedFields=response.headers.get('x-pdf-client-fields');
+                if (encodedFields) {
+                    const fields=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(encodedFields),c=>c.charCodeAt(0))));
+                    if (fields.length) {
+                        if (!window.KinoPdfForm) throw new Error('可填寫 PDF 模組尚未載入，請重新整理。');
+                        const font=await fetch(new URL('./assets/pdf/NotoSansTC-Regular.ttf',document.baseURI));
+                        if (!font.ok) throw new Error('PDF 中文字型載入失敗。');
+                        const bytes=await window.KinoPdfForm.addClientFields(await blob.arrayBuffer(),fields,await font.arrayBuffer());
+                        blob=new Blob([bytes],{type:'application/pdf'});
+                    }
+                }
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;

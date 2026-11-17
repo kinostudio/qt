@@ -28,7 +28,8 @@ test('renderer disables scripts and rejects arbitrary network access', async () 
     async evaluate() {}, async $$eval() { return 1; },
     async pdf(options) { assert.equal(options.preferCSSPageSize, true); return new Uint8Array(); }
   };
-  await renderPrintPdf(page, { html: '<div class="print-pagination-root"></div>', css: '' });
+  const rendered=await renderPrintPdf(page, { html: '<div class="print-pagination-root"></div>', css: '' });
+  assert.deepEqual(rendered.fields,[]);
   assert.deepEqual(calls[0], ['javascript', false]);
   let blocked = 0, allowed = 0;
   for (const url of ['http://127.0.0.1/private', 'https://attacker.example/', 'http://169.254.169.254/']) intercept({ method: () => 'GET', url: () => url, abort: () => blocked++, continue: () => allowed++ });

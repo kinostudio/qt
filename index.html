@@ -41,6 +41,7 @@
     <script src="https://accounts.google.com/gsi/client?hl=zh_TW" async defer></script>
     <script src="./assets/msal-browser-5.17.3.min.js"></script>
     <script src="./assets/pdf-export.js" defer></script>
+    <script src="./assets/pdf-form.js" defer></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+CJK+TC:wght@400;500;700&display=swap');
@@ -3417,7 +3418,7 @@
                         preparePrintPagination();
                         showToast('正在產生 PDF，請稍候…');
                         await window.KinoPdfExport.download(document.querySelector('.print-pagination-root'), data.header.quotationId, pdfToken, CLOUD_SYNC_API_URL);
-                        showToast('PDF 已產生');
+                        setSyncNotice('PDF 已下載：甲方資料可點選填寫；簽名與印章請使用 PDF 閱讀器的「填寫與簽署」工具。列印另存版沒有可填欄位。');
                     } catch (error) {
                         console.error('PDF export failed', error);
                         showToast(error.message || 'PDF 產生失敗，請使用列印另存 PDF。');
@@ -4753,10 +4754,10 @@
                                         </colgroup>
                                         <thead><tr><th></th><th>甲方</th><th>乙方</th></tr></thead>
                                         <tbody>
-                                            <tr><th>抬頭</th><td>{data.signature.clientCompany || '　'}</td><td>{data.signature.vendorCompany || '　'}</td></tr>
-                                            <tr><th>代表人</th><td>{data.signature.clientContact || '　'}</td><td>{data.signature.vendorContact || '　'}</td></tr>
-                                            <tr><th>統編</th><td>{data.signature.clientTaxId || '　'}</td><td>{data.signature.vendorTaxId || '　'}</td></tr>
-                                            <tr><th>電話</th><td>{data.signature.clientPhone || '　'}</td><td>{data.signature.vendorPhone || '　'}</td></tr>
+                                            <tr><th>抬頭</th><td data-pdf-client-field="clientCompany">{data.signature.clientCompany || '　'}</td><td>{data.signature.vendorCompany || '　'}</td></tr>
+                                            <tr><th>代表人</th><td data-pdf-client-field="clientContact">{data.signature.clientContact || '　'}</td><td>{data.signature.vendorContact || '　'}</td></tr>
+                                            <tr><th>統編</th><td data-pdf-client-field="clientTaxId">{data.signature.clientTaxId || '　'}</td><td>{data.signature.vendorTaxId || '　'}</td></tr>
+                                            <tr><th>電話</th><td data-pdf-client-field="clientPhone">{data.signature.clientPhone || '　'}</td><td>{data.signature.vendorPhone || '　'}</td></tr>
                                             <tr>
                                                 <th>簽署</th>
                                                 <td><div className="quick-acceptance-signature">{data.signature.clientSigImg ? <img src={data.signature.clientSigImg} alt="甲方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.clientStamp} asset={stampAssets.find(asset => asset.id === data.signature.clientStamp?.assetId)} /></div></div></td>

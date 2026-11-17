@@ -26,7 +26,7 @@ export function createPrintDocument({ html, css }, fontSource = PRINT_FONT_URL) 
   // A new, cookie-free browser has no application credentials. Scripts are
   // disabled before loading this document; all outbound requests are blocked
   // except the single public print font, preventing SSRF/resource exfiltration.
-  return `<!doctype html><html lang="zh-TW" class="print-pagination-active"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data: https://aaronkino.github.io; script-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"><style>${css.replace(/@import\s+[^;]+;/gi, '')}</style><style>@font-face{font-family:KinoPrintTC;src:url('${fontSource}') format('truetype');font-weight:400;font-display:block}.print-pagination-root,.print-pagination-root input,.print-pagination-root textarea,.print-pagination-root select{font-family:KinoPrintTC,sans-serif!important}html,body{margin:0;padding:0;background:white}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`;
+  return `<!doctype html><html lang="zh-TW" class="print-pagination-active"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data: https://aaronkino.github.io; script-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"><style>${css.replace(/@import\s+[^;]+;/gi, '')}</style><style>@font-face{font-family:KinoPrintTC;src:url('${fontSource}') format('truetype');font-weight:400;font-display:block}.print-pagination-root,.print-pagination-root input,.print-pagination-root textarea,.print-pagination-root select{font-family:KinoPrintTC,sans-serif!important}html,body{margin:0;padding:0;background:white}body{width:194mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`;
 }
 
 export async function renderPrintPdf(page, payload, fontSource = PRINT_FONT_URL) {
@@ -46,5 +46,18 @@ export async function renderPrintPdf(page, payload, fontSource = PRINT_FONT_URL)
   });
   const count = await page.$$eval('.print-page', pages => pages.length);
   if (!count || count > 20) throw new Error('PDF_PAGE_LIMIT');
-  return page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true, displayHeaderFooter: false, scale: 1, timeout: 20000 });
+  const fields = payload.editableClientFields === true ? await page.evaluate(() => {
+    const pt=72/96, margin=8*72/25.4, pageHeight=297*72/25.4;
+    return [...document.querySelectorAll('.print-page')].flatMap((page,pageIndex)=>{
+      const origin=page.getBoundingClientRect();
+      return [...page.querySelectorAll('[data-pdf-client-field]')].map(cell=>{
+        const r=cell.getBoundingClientRect(), style=getComputedStyle(cell);
+        const field={name:cell.dataset.pdfClientField,page:pageIndex,value:cell.textContent.trim(),x:margin+(r.left-origin.left)*pt+2,y:pageHeight-margin-(r.bottom-origin.top)*pt+1,width:r.width*pt-4,height:r.height*pt-2,fontSize:parseFloat(style.fontSize)*pt};
+        cell.textContent='\u3000';
+        return field;
+      });
+    });
+  }) : [];
+  const bytes=await page.pdf({ format: 'A4', printBackground: true, preferCSSPageSize: true, displayHeaderFooter: false, scale: 1, timeout: 20000 });
+  return {bytes,fields:fields || []};
 }

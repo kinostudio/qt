@@ -917,9 +917,9 @@ const routeRequest = async (request, env) => {
       const fontSource = 'data:font/ttf;base64,' + Buffer.from(await font.arrayBuffer()).toString('base64');
       browser = await puppeteer.launch(env.PDF_BROWSER, { keep_alive: 10000 });
       const page = await browser.newPage();
-      const bytes = await renderPrintPdf(page, payload, fontSource);
+      const {bytes,fields} = await renderPrintPdf(page, payload, fontSource);
       const filename = String(payload.quotationId || 'quotation').trim().replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').slice(0, 180) + '.pdf';
-      return new Response(bytes, { headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="quotation.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`, 'cache-control': 'no-store' } });
+      return new Response(bytes, { headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="quotation.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`, 'cache-control': 'no-store', 'x-pdf-client-fields':Buffer.from(JSON.stringify(fields)).toString('base64'), 'access-control-expose-headers':'x-pdf-client-fields' } });
     } catch (error) {
       // Do not log submitted HTML, seal images, or project contents.
       console.error('PDF_RENDER_FAILED', error?.name || 'Error');
