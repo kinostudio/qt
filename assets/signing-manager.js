@@ -69,7 +69,7 @@
       const days=Number(area('days').value);if(!Number.isInteger(days)||days<1||days>30)throw new Error('連結有效天數須為1–30天。');
       let record;
       try{record=await request('/api/signing',{method:'POST',body:JSON.stringify({confirmed:true,snapshot,lifetimeDays:days})});}
-      catch(error){snapshot=null;area('prepared').hidden=true;release();await load().catch(()=>{});throw new Error((error.message||'連線失敗')+'。請先重新整理簽署紀錄確認是否已建立，避免重複建立。');}
+      catch(error){if(error.status===429)throw error;snapshot=null;area('prepared').hidden=true;release();await load().catch(()=>{});throw new Error((error.message||'連線失敗')+'。請先重新整理簽署紀錄確認是否已建立，避免重複建立。');}
       snapshot=null;area('prepared').hidden=true;release();showLink(record);offset=0;await load();message('已建立不可隨草稿變動的待簽版本。可將專用連結傳給客戶。');
     });
     button('refresh').onclick=()=>run(async()=>{await load();message('簽署狀態已更新。');});

@@ -2,14 +2,11 @@ import {Buffer} from 'node:buffer';
 import {SigningError} from './signing-store.js';
 import {prepareSigningPage,renderSigningPdf} from './signing-render.js';
 import {PRINT_FONT_URL} from './pdf-render.js';
+import {createBudgetBrowserSession} from './browser-budget.js';
 
 export function createSigningRenderSession(env) {
-  let browserPromise,fontPromise;
-  const browser=()=>browserPromise||=(async()=>{
-    if(!env.PDF_BROWSER) throw new SigningError('簽署產檔服務尚未啟用',503);
-    try {const {default:puppeteer}=await import('@cloudflare/puppeteer');return await puppeteer.launch(env.PDF_BROWSER,{keep_alive:10000});}
-    catch {throw new SigningError('簽署產檔服務暫時無法使用',503);}
-  })();
+  let fontPromise;
+  const budget=createBudgetBrowserSession(env),browser=()=>budget.browser();
   const font=()=>fontPromise||=(async()=>{
     const response=await fetch(PRINT_FONT_URL,{signal:AbortSignal.timeout(15000),cf:{cacheTtl:86400}});
     if(!response.ok || Number(response.headers.get('content-length'))>16*1024*1024) throw new SigningError('列印字型無法載入',503);
@@ -33,6 +30,6 @@ export function createSigningRenderSession(env) {
       try {return await renderSigningPdf(page,snapshot,submission,await font());}
       finally {await page.close().catch(()=>{});}
     },
-    async close() {const active=await browserPromise?.catch(()=>null);if(active) await active.close().catch(()=>{});}
+    close:()=>budget.close()
   };
 }

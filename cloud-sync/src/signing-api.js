@@ -3,6 +3,7 @@ import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './si
 import {loadSignedPdfForGuest,loadSignedPdfForOwner,submitSigningRequest} from './signing-submit.js';
 import {createSigningRenderSession} from './signing-browser.js';
 import {loadSigningPreview,previewSigningSubmission} from './signing-preview.js';
+import {createBudgetBrowserSession} from './browser-budget.js';
 
 export const isSigningGuestPath=path=>['/api/signing/guest','/api/signing/guest/pdf','/api/signing/guest/preview'].includes(path);
 
@@ -23,15 +24,15 @@ async function decodeImagesUsingBrowser(env,snapshot) {
   const q=snapshot.quotation;
   if(!q.logo && !q.signature.clientSigImg && !q.signature.vendorSigImg && !q.signature.clientStamp.sourceDataUrl && !q.signature.vendorStamp.sourceDataUrl) return snapshot;
   if(!env.PDF_BROWSER) throw new SigningError('圖片驗證服務尚未啟用',503);
-  let browser;
+  const budget=createBudgetBrowserSession(env);
   try {
-    const {default:puppeteer}=await import('@cloudflare/puppeteer');
-    browser=await puppeteer.launch(env.PDF_BROWSER,{keep_alive:10000});
+    const browser=await budget.browser();
     return await rasterizeSigningImages(await browser.newPage(),snapshot);
-  } catch {
+  } catch(error) {
+    if(error instanceof SigningError)throw error;
     throw new SigningError('圖片無法解析或驗證服務暫時無法使用，尚未建立待簽版本',503);
   } finally {
-    if(browser) await browser.close().catch(()=>{});
+    await budget.close();
   }
 }
 

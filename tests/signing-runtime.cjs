@@ -8,7 +8,7 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
   const {signingBody}=await import('./fixtures/signing.mjs');
   const {signingSha256,SIGNING_SQL}=await import('../cloud-sync/src/signing-store.js');
   const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:path.resolve('tmp/signing-worker-bundle/index.js'),compatibilityDate:'2026-09-08',compatibilityFlags:['nodejs_compat'],cf:false,
-    bindings:{SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test',SIGNING_LINK_SECRET:'test-only-link-key-not-a-real-secret-12345678',ALLOWED_ORIGINS:'https://qt.kinostudio.tw'},
+    bindings:{SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test',SIGNING_LINK_SECRET:'test-only-link-key-not-a-real-secret-12345678',ALLOWED_ORIGINS:'https://qt.kinostudio.tw',PDF_ENABLED:'true',PDF_ALLOWED_EMAILS:'owner@example.test',PDF_BROWSER:{}},
     d1Databases:['DB'],d1Persist:false,r2Buckets:['STAMP_BUCKET'],r2Persist:false,
     ratelimits:{PDF_RATE_LIMITER:{namespace_id:'1001',simple:{limit:2,period:60}}}
   }));
@@ -17,6 +17,7 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
     // This migration has only CREATE statements; keep each trigger body together.
     const migration=fs.readFileSync('cloud-sync/migrations/0008_quote_signing.sql','utf8');
     for(const statement of migration.split(/(?<=;)\s*(?=CREATE)/)) await db.prepare(statement).run();
+    await db.prepare(fs.readFileSync('cloud-sync/migrations/0009_browser_budget.sql','utf8')).run();
     await db.prepare('CREATE TABLE cloud_users(id TEXT PRIMARY KEY,email TEXT,display_name TEXT,picture_url TEXT)').run();
     await db.prepare('CREATE TABLE cloud_sessions(token_hash TEXT PRIMARY KEY,user_id TEXT,expires_at TEXT)').run();
     const session='local-runtime-owner-session-0123456';
@@ -30,6 +31,9 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
     assert.equal(listed.items.length,1);assert.equal(listed.items[0].quotationId,'TEST-ONLY-001');
     const restored=await(await mf.dispatchFetch('https://api.test/api/signing/'+share.id,{headers:ownerHeaders})).json();
     assert.equal(restored.url,share.url);
+    await db.prepare('INSERT INTO quote_browser_budget(id,day,used_ms,next_start_at,lease_until) VALUES(1,?1,480000,0,0)').bind(new Date().toISOString().slice(0,10)).run();
+    const overBudget=await mf.dispatchFetch('https://api.test/api/pdf',{method:'POST',headers:{...ownerHeaders,'Content-Type':'application/json'},body:JSON.stringify(signingBody().snapshot.printDocument)});
+    assert.equal(overBudget.status,429,await overBudget.clone().text());assert.match((await overBudget.json()).error,/今日/);
     const guest=await mf.dispatchFetch('https://api.test/api/signing/guest',{headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+share.token}});
     assert.equal(guest.status,200);assert.equal((await guest.json()).snapshot.quotation.header.quotationId,'TEST-ONLY-001');
     const claimArgs=[await signingSha256(share.token),Date.now(),'quote-signing/v1/local-test/submission.json','a'.repeat(64),'b'.repeat(64)];
