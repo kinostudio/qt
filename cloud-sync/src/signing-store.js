@@ -70,11 +70,22 @@ export async function createSigningRequest(db, bucket, workspaceId, snapshot, li
 export async function loadSigningSnapshot(db, bucket, token, now = Date.now()) {
   const row = await db.prepare(SIGNING_SQL.guest).bind(await tokenHash(token), now).first();
   if (!row) throw new SigningError('找不到或連結已失效', 404);
+  return { id: row.id, status: row.status, expiresAt: row.expires_at, snapshot: await readSnapshotObject(bucket,row) };
+}
+
+async function readSnapshotObject(bucket,row) {
   const object = await bucket.get(row.snapshot_key);
   if (!object || object.size > MAX_SNAPSHOT_BYTES) throw new SigningError('待簽版本無法讀取', 503);
   const text = await object.text();
   if (await signingSha256(text) !== row.snapshot_sha256) throw new SigningError('待簽版本完整性檢查失敗', 503);
-  return { id: row.id, status: row.status, expiresAt: row.expires_at, snapshot: JSON.parse(text) };
+  return JSON.parse(text);
+}
+
+export async function loadSigningSnapshotForOwner(db,bucket,workspaceId,id) {
+  validWorkspace(workspaceId);
+  const row=await db.prepare(SIGNING_SQL.owner).bind(workspaceId,id).first();
+  if(!row) throw new SigningError('找不到待簽版本',404);
+  return {id:row.id,status:row.status,createdAt:row.created_at,expiresAt:row.expires_at,revokedAt:row.revoked_at,snapshotSha256:row.snapshot_sha256,snapshot:await readSnapshotObject(bucket,row)};
 }
 
 export async function revokeSigningRequest(db, workspaceId, id, now = Date.now()) {

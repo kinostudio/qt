@@ -57,7 +57,7 @@
 ### 分批開發
 
 1. [x] 新增獨立 `quote_signing_requests` 表與 `quote-signing/v1/` R2前綴設計，migration `0008_quote_signing.sql` 在記憶體SQLite通過；既有表結構／資料保持不變。尚未正式套用，影響與公開前缺口見 `docs/signing-storage.md`。
-2. [ ] 後端建立／讀取／撤銷分享與權限邊界測試。
+2. [x] 已在開發分支接入建立／讀取／撤銷API，透過Worker fetch入口、記憶體SQLite及模擬bindings驗證Google身分、簽署帳號白名單、工作區、客戶來源及權杖隔離。預設停用，尚未正式部署；Workers runtime驗收另列後續缺口。
 3. [ ] 客戶手機頁：閱讀、填寫、手寫／上傳、預覽、確認、完成頁與下載／列印。
 4. [ ] 簽署原子性、重試與PDF固定版本；錯誤復原、已簽內容防覆寫。
 5. [ ] 編輯台建立連結、簽署狀態、開啟／下載已簽版本。
@@ -96,6 +96,15 @@
 - 新增簽署儲存模組 `signing-store.js`：快照私有條件寫入、SHA-256檢查、32-byte隨機權杖僅存雜湊、工作區限定撤銷、過期拒絕。SQL使用單次條件更新取得提交權，觸發器阻擋快照／提交／已簽PDF改寫與狀態回退。
 - passed：全部25項單元測試，其中7項新簽署測試使用真正記憶體SQLite與模擬R2。not_checked：Workers本機整合、正式R2條件寫入、完整客戶HTTP／手機簽署。模組尚未接入Worker路由，不公開啟用，不算完成客戶簽署功能。
 - 本批只開發本機程式與測試；未套用正式migration、未部署Worker、未寫入既有雲端資料。下一步接入嚴格快照／圖片驗證與登入管理者API，再做客戶頁及固定PDF；不要因儲存層測試通過就直接上線。
+
+### 簽署API與圖片驗證增量
+
+- 開發分支新增 `signing-api.js`、`signing-validation.js`；Worker route以 `SIGNING_ENABLED` 預設關閉，管理者另需 `SIGNING_ALLOWED_EMAILS`。兩個正式設定均尚未啟用。
+- 管理者POST建立、GET查閱、DELETE撤銷均限定已登入的工作區；客戶GET使用Quote權杖header，只讀單份快照。客戶網域無法藉此存取同步／印章管理API。
+- 快照拒絕未知欄位、工作區覆寫、外部圖片及缺失印章；串流請求受20MB限制。圖片需先轉PNG再由隔離瀏覽器實際解碼重畫；原編輯台上傳格式不變，建立簽署介面的PNG轉換尚待接線。
+- passed：全套33項單元測試，另有本機Chromium圖片解碼測試，覆蓋損壞檔、像素上限及無外部連線。not_checked：正式Browser Run、Workers本機runtime、客戶手機提交／固定PDF。未部署或寫入正式D1／R2，未呼叫正式Browser Run。
+- 本輪未操作Edge還原；上輪接受確認後的結果仍未知，需恢復連線後先核對，不可重做還原。下一步：客戶資料／手寫／印章提交及冪等重試、客戶獨立前端、固定PDF，並補齊遷站驗收。
+- 補強驗證：Wrangler dry-run打包成功（912.10KiB，gzip171.73KiB，未部署）；另用已安裝Miniflare/workerd啟動不持久化的隔離本機D1/R2，實際通過建立／客戶讀取／撤銷、單次claim、快照／PDF欄位不可改寫、R2條件寫入及來源隔離。這補齊了此批文字快照API的Workers本機binding驗證，仍不代表正式Browser Run圖片服務、完整簽署UI或正式部署通過。
 
 ## 自動續作
 

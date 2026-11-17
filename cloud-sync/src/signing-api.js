@@ -1,0 +1,54 @@
+import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapshotForOwner,revokeSigningRequest} from './signing-store.js';
+import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './signing-validation.js';
+
+const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{
+  'content-type':'application/json; charset=utf-8','cache-control':'no-store',
+  'referrer-policy':'no-referrer','x-robots-tag':'noindex, nofollow','x-content-type-options':'nosniff'
+}});
+
+async function decodeImagesUsingBrowser(env,snapshot) {
+  const q=snapshot.quotation;
+  if(!q.logo && !q.signature.clientSigImg && !q.signature.vendorSigImg && !q.signature.clientStamp.sourceDataUrl && !q.signature.vendorStamp.sourceDataUrl) return snapshot;
+  if(!env.PDF_BROWSER) throw new SigningError('圖片驗證服務尚未啟用',503);
+  let browser;
+  try {
+    const {default:puppeteer}=await import('@cloudflare/puppeteer');
+    browser=await puppeteer.launch(env.PDF_BROWSER,{keep_alive:10000});
+    return await rasterizeSigningImages(await browser.newPage(),snapshot);
+  } catch {
+    throw new SigningError('圖片無法解析或驗證服務暫時無法使用，尚未建立待簽版本',503);
+  } finally {
+    if(browser) await browser.close().catch(()=>{});
+  }
+}
+
+export async function handleSigningGuest(request,env) {
+  if(request.method!=='GET') throw new SigningError('不支援此操作',405);
+  const header=request.headers.get('authorization')||'';
+  const token=header.startsWith('Quote ')?header.slice(6):'';
+  return reply(await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token));
+}
+
+export async function handleSigningOwner(request,env,auth,decodeImages=decodeImagesUsingBrowser) {
+  const allowed=String(env.SIGNING_ALLOWED_EMAILS||'').split(',').map(email=>email.trim().toLowerCase()).filter(Boolean);
+  if(auth?.type!=='google' || !allowed.includes(String(auth.user?.email||'').toLowerCase())) throw new SigningError('此帳號尚未開通客戶簽署',403);
+  const path=new URL(request.url).pathname;
+  if(path==='/api/signing' && request.method==='POST') {
+    const {snapshot,lifetimeDays}=validateSigningCreate(await readSigningJson(request));
+    if(!env.PDF_RATE_LIMITER) throw new SigningError('簽署用量保護尚未設定',503);
+    const limit=await env.PDF_RATE_LIMITER.limit({key:auth.user.id});
+    if(!limit.success) throw new SigningError('操作過於頻繁，請稍後重試',429);
+    const fixedSnapshot=await decodeImages(env,snapshot);
+    const share=await createSigningRequest(env.DB,env.STAMP_BUCKET,auth.workspaceId,fixedSnapshot,lifetimeDays);
+    return reply({...share,url:`https://quote.kinostudio.tw/s/${share.token}`},201);
+  }
+  const match=/^\/api\/signing\/([a-f0-9-]{36})$/.exec(path);
+  if(!match) throw new SigningError('找不到簽署操作',404);
+  const id=match[1];
+  if(request.method==='GET') return reply(await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id));
+  if(request.method==='DELETE') {
+    if(!await revokeSigningRequest(env.DB,auth.workspaceId,id)) throw new SigningError('找不到可撤銷的待簽版本',404);
+    return reply({ok:true});
+  }
+  throw new SigningError('不支援此操作',405);
+}

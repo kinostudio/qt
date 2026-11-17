@@ -1,6 +1,8 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readPdfPayload, renderPrintPdf, PRINT_FONT_URL } from './pdf-render.js';
 import { guardSql } from './sync-guard.js';
+import { SigningError } from './signing-store.js';
+import { handleSigningGuest, handleSigningOwner } from './signing-api.js';
 import { Buffer } from 'node:buffer';
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -31,6 +33,10 @@ const getCorsHeaders = (request, env) => {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+
+  if (new URL(request.url).pathname === '/api/signing/guest' && env.SIGNING_ENABLED === 'true') {
+    allowedOrigins.push('https://quote.kinostudio.tw');
+  }
 
   if (!allowedOrigins.includes(origin)) return {};
 
@@ -871,10 +877,16 @@ const routeRequest = async (request, env) => {
       googleLoginEnabled: Boolean(env.GOOGLE_CLIENT_ID),
       microsoftClientId: env.MICROSOFT_CLIENT_ID || "",
       oneDriveLoginEnabled: Boolean(env.MICROSOFT_CLIENT_ID),
+      signingEnabled: env.SIGNING_ENABLED === 'true',
     });
   }
   if (request.method === "POST" && url.pathname === "/api/auth/google") {
     return googleLogin(request, env);
+  }
+
+  if (url.pathname === '/api/signing' || url.pathname.startsWith('/api/signing/')) {
+    if (env.SIGNING_ENABLED !== 'true') throw new SigningError('客戶簽署尚未啟用',404);
+    if (url.pathname === '/api/signing/guest') return handleSigningGuest(request,env);
   }
 
   const auth = await getAuthContext(request, env);
@@ -899,6 +911,7 @@ const routeRequest = async (request, env) => {
   }
 
   const workspaceId = auth.workspaceId;
+  if (url.pathname === '/api/signing' || url.pathname.startsWith('/api/signing/')) return handleSigningOwner(request,env,auth);
   if (request.method === 'POST' && url.pathname === '/api/pdf') {
     const allowedEmails = String(env.PDF_ALLOWED_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (!allowedEmails.includes(String(auth.user.email || '').toLowerCase())) throw new ApiError('此帳號尚未開通 PDF 下載。', 403);
@@ -1315,15 +1328,18 @@ export default {
       return securedResponse;
     } catch (error) {
       const status =
-        error instanceof ApiError ? error.status : 500;
-      if (!(error instanceof ApiError)) console.error(error);
+        error instanceof ApiError || error instanceof SigningError ? error.status : 500;
+      if (!(error instanceof ApiError) && !(error instanceof SigningError)) {
+        if (new URL(request.url).pathname.startsWith('/api/signing')) console.error('SIGNING_API_FAILED',error?.name||'Error');
+        else console.error(error);
+      }
       const message =
         error?.message === "PAYLOAD_TOO_LARGE"
           ? "同步資料超過大小上限"
-          : error instanceof ApiError
+          : error instanceof ApiError || error instanceof SigningError
             ? error.message
             : "伺服器處理失敗";
-      return json({ error: message }, status, corsHeaders);
+      return json({ error: message }, status, {...corsHeaders,'cache-control':'no-store','x-content-type-options':'nosniff'});
     }
   },
 };
