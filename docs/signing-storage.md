@@ -90,6 +90,12 @@ R2成功但D1回應失敗時，保留該私人物件，不直接刪除：D1可�
 
 ## 測試證據
 
+`node tests/signing-e2e.cjs` 串接真正的桌面編輯台及手機客戶頁、`handleSigningOwner`／`handleSigningGuest`、記憶體SQLite的原始SQL與觸發器、記憶體R2及本機Chromium產檔。只透過函式參數注入本機產檔工作階段；正式Worker入口仍使用預設Browser Run與額度保護，HTTP輸入不能選擇測試實作。Google身分、雲端傳輸與限流採用測試替身，不能據此宣稱正式登入／Cloudflare平台整合驗收。
+
+完整流程涵蓋快速手寫／詳細上傳印章、建立後修改草稿但固定快照不變、原始報價閱讀、填寫後預覽不寫入、確認簽署、產檔故障保留提交、重新整理後同內容／同冪等鍵恢復、甲乙下載檔案位元組及D1 SHA-256一致、撤銷後客戶不可讀但管理者檔案保留。PDF會重新開啟檢查1／2頁、零可編輯表單，並擷取文字核對甲方、固定條款與稅前100,000／稅後105,000；三個實際頁面另經渲染檢查。
+
+測試產物僅在被Git忽略的 `tmp/pdfs/e2e-*-client.pdf`／`e2e-*-owner.pdf`，不包含雲端正式專案。未呼叫正式Browser Run、D1、R2、OneDrive。原有外層登入／CORS與額度檢查仍由API／隔離workerd測試分別涵蓋。
+
 `node --test tests/signing-store.test.mjs` 使用記憶體SQLite執行真正SQL與觸發器，並模擬D1 binding及私有R2。
 
 涵蓋：舊表結構與資料保留、原始權杖不入庫、快照獨立、完整性錯誤、過期／撤銷、跨工作區撤銷拒絕、單次提交、不可逆狀態、提交／PDF不可覆寫、NULL不能繞過CHECK、容量與期限、R2衝突及D1不確定提交。

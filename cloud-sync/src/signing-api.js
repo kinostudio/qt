@@ -36,7 +36,7 @@ async function decodeImagesUsingBrowser(env,snapshot) {
   }
 }
 
-export async function handleSigningGuest(request,env) {
+export async function handleSigningGuest(request,env,createSession=createSigningRenderSession) {
   const header=request.headers.get('authorization')||'';
   const token=header.startsWith('Quote ')?header.slice(6):'';
   const path=new URL(request.url).pathname;
@@ -46,7 +46,7 @@ export async function handleSigningGuest(request,env) {
   };
   if(request.method==='POST' && ['/api/signing/guest','/api/signing/guest/preview'].includes(path)) {
     if(env.SIGNING_SUBMIT_ENABLED!=='true') throw new SigningError('客戶簽署送出尚未開放',503);
-    const session=createSigningRenderSession(env);
+    const session=createSession(env);
     try {
       const body=await readSigningJson(request);
       if(path==='/api/signing/guest/preview') {
@@ -59,7 +59,7 @@ export async function handleSigningGuest(request,env) {
   }
   if(request.method!=='GET') throw new SigningError('不支援此操作',405);
   if(path==='/api/signing/guest/preview') {
-    const session=createSigningRenderSession(env);
+    const session=createSession(env);
     try {const file=await loadSigningPreview(env.DB,env.STAMP_BUCKET,token,{...session,allowRender});return pdfReply(file,file.quotationId);}
     finally {await session.close();}
   }

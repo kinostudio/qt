@@ -152,6 +152,14 @@
 - 本輪沒有呼叫正式Browser Run、設定計費或Secret、套用正式migration、部署正式站，亦未修改現有D1／R2／OneDrive資料。0008／0009都尚未套用正式D1。
 - 後續唯讀預檢：Wrangler whoami已成功，先前CLI OAuth失效不再是目前阻礙。正式D1查詢sqlite_master僅找到d1_migrations，沒有quote_signing_requests／quote_browser_budget；回應rows_written=0、changed_db=false。Edge頁籤仍存在，但以ID及URL重新取得均回報Emulation.setFocusEmulationEnabled逾時；已停止UI操作並請使用者重新連接。Free方案畫面、新站還原與OneDrive真實登入仍不能宣稱驗收完成。
 
+### 編輯台到客戶的隔離完整串接（2026-11-18，未部署）
+
+- 新增 `tests/signing-e2e.cjs`：使用實際桌面編輯台與390×844手機客戶頁，串接真實管理者／客戶API handler、原始SQLite狀態轉移及觸發器、模擬R2與本機Chromium，不再只回傳假的PDF位元組。
+- passed：快速手寫／詳細印章完整流程；待簽建立後修改草稿不回寫；預覽不寫入；第一次最終產檔失敗後保留提交、重新整理同冪等鍵重試成功；甲乙雙方下載位元組與D1雜湊相同；撤銷後客戶被拒但管理者固定檔保留。PDF文字包含甲方、固定條款、稅前10萬及稅後105,000，不包含後續草稿改動；頁數1／2、已簽檔無表單，三頁渲染檢查完成。
+- 測試資料與產物均隔離；原專案sentinel資料不變、客戶僅呼叫簽署端點、未POST原有同步資料。原有67項單元測試仍通過。測試遇到字型的相容漢字部首，文字比對以NFKC正規化，未為了測試改動正式PDF文字。
+- not_checked：真實Google身分、正式Cloudflare Browser Run／CORS外層與本批完整UI的整體驗收；這些仍須與既有API／workerd測試分開看待。Edge重連、正式Free方案及本機還原／OneDrive驗收也仍待完成，不提前私人化GitHub。
+- 本輪未部署、未套用正式migration、未建立Secret，未寫入正式D1／R2／OneDrive或呼叫正式Browser Run。
+
 ## 自動續作
 
 已建立本對話 active goal；沿用並更新此對話既有 heartbeat `automation-6`，每小時續作一個安全工作批次。需本機 Codex 能執行；不代表離線雲端常駐服務。需使用者授權的步驟記錄並請求，不擅自繞過。
