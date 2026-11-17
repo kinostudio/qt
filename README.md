@@ -2,6 +2,12 @@
 
 公開網站：<https://aaronkino.github.io/qt/>
 
+## 架構圖
+
+前期互動式架構圖：[docs/architecture.html](docs/architecture.html)（2026-10-31 基準，可下載 PNG 或列印／另存 PDF；不是新站完成圖）。
+
+遷站與客戶簽署的執行順序、功能保留清單、驗收閘門和最新進度，見 [長期計畫](docs/LONG_TERM_PLAN.md)。
+
 ## 2026-10-30 安全更新與下載 PDF
 
 - Pages 以公開檔案白名單部署：僅 `index.html`、`assets/`，不發布後端設定、測試與資料庫遷移。
