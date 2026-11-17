@@ -5,7 +5,7 @@
 ## 不可違反的範圍
 
 - 編輯台：`qt.kinostudio.tw`；客戶分享與簽署：`quote.kinostudio.tw`。兩個獨立前端，不混用奇諾官網。
-- GitHub 指定帳號：`kinostudio`。目前原始遠端為 `aaronkino/qt`；獨立建立新庫或直接轉移，等待使用者確認，未確認前不轉移／改私人。
+- GitHub 指定帳號：`kinostudio`。使用者已確認建立獨立 `kinostudio/qt` 並保留完整歷史；原始遠端 `aaronkino/qt` 留作回退。依指定順序，新庫先建公開且最後才私人化，原庫也不提前關閉。
 - 沿用現有 `kino-quotation-data-api` Worker、D1 `kino-quotation-data`、R2 `kino-quotation-stamps`。不清空、不重建、不覆寫既有專案、條款與印章。
 - 免費方案優先；遇到升級、付款、額外外部服務，先取得確認。
 - 不用正式資料做寫入測試，不將憑證、Token、客戶資料寫入 Git、日誌或文件。
@@ -66,7 +66,7 @@
 
 ## 目前下一步
 
-- 等待使用者確認 GitHub 的「新庫」或「轉移」方式；其他安全建置與測試可繼續。
+- 已確認建立獨立 `kinostudio/qt`；保留原庫直到驗收與備份完成。正在建立新庫與獨立 Pages Git 整合。
 - 核對 DNS／Pages GitHub 授權範圍，建立公開白名單建置及本機備份／匯入規格。
 - 每個工作批次更新此檔案，紀錄實際證據，區分 `passed`／`failed`／`not_checked`。不能因為程式寫完就勾選正式驗收完成。
 
