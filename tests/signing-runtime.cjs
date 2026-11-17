@@ -8,7 +8,7 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
   const {signingBody}=await import('./fixtures/signing.mjs');
   const {signingSha256,SIGNING_SQL}=await import('../cloud-sync/src/signing-store.js');
   const mf=new Miniflare(convertV4MiniflareOptions({modules:true,scriptPath:path.resolve('tmp/signing-worker-bundle/index.js'),compatibilityDate:'2026-09-08',compatibilityFlags:['nodejs_compat'],cf:false,
-    bindings:{SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test',ALLOWED_ORIGINS:'https://qt.kinostudio.tw'},
+    bindings:{SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test',SIGNING_LINK_SECRET:'test-only-link-key-not-a-real-secret-12345678',ALLOWED_ORIGINS:'https://qt.kinostudio.tw'},
     d1Databases:['DB'],d1Persist:false,r2Buckets:['STAMP_BUCKET'],r2Persist:false,
     ratelimits:{PDF_RATE_LIMITER:{namespace_id:'1001',simple:{limit:2,period:60}}}
   }));
@@ -25,6 +25,11 @@ const {Miniflare,convertV4MiniflareOptions}=createRequire(path.resolve('cloud-sy
     const created=await mf.dispatchFetch('https://api.test/api/signing',{method:'POST',headers:{Origin:'https://qt.kinostudio.tw',Authorization:'Bearer '+session,'Content-Type':'application/json'},body:JSON.stringify(signingBody())});
     assert.equal(created.status,201,await created.clone().text());
     const share=await created.json();
+    const ownerHeaders={Origin:'https://qt.kinostudio.tw',Authorization:'Bearer '+session};
+    const listed=await(await mf.dispatchFetch('https://api.test/api/signing',{headers:ownerHeaders})).json();
+    assert.equal(listed.items.length,1);assert.equal(listed.items[0].quotationId,'TEST-ONLY-001');
+    const restored=await(await mf.dispatchFetch('https://api.test/api/signing/'+share.id,{headers:ownerHeaders})).json();
+    assert.equal(restored.url,share.url);
     const guest=await mf.dispatchFetch('https://api.test/api/signing/guest',{headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+share.token}});
     assert.equal(guest.status,200);assert.equal((await guest.json()).snapshot.quotation.header.quotationId,'TEST-ONLY-001');
     const claimArgs=[await signingSha256(share.token),Date.now(),'quote-signing/v1/local-test/submission.json','a'.repeat(64),'b'.repeat(64)];

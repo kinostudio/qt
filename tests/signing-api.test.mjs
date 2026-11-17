@@ -14,10 +14,11 @@ async function fixture(t) {
   const sessions=new Map([[await signingSha256(ownerToken),{user_id:'test-owner',email:'owner@example.test',expires_at:'2099-01-01'}],[await signingSha256(otherToken),{user_id:'test-other',email:'other@example.test',expires_at:'2099-01-01'}]]);
   const calls=[],objects=new Map();
   const env={SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test,other@example.test',ALLOWED_ORIGINS:'https://qt.kinostudio.tw',
+    SIGNING_LINK_SECRET:'test-only-link-key-not-a-real-secret-12345678',
     PDF_RATE_LIMITER:{async limit(){return {success:true};}},
     DB:{prepare(sql) {return {bind(...values) {
       calls.push({sql,values});const params=Object.fromEntries(values.map((value,i)=>['?'+(i+1),value]));
-      return {async first(){return sql.includes('FROM cloud_sessions')?(sessions.get(values[0])||null):(sqlite.prepare(sql).get(params)||null);},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(params).changes)}};}};
+      return {async first(){return sql.includes('FROM cloud_sessions')?(sessions.get(values[0])||null):(sqlite.prepare(sql).get(params)||null);},async all(){return {results:sqlite.prepare(sql).all(params)};},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(params).changes)}};}};
     }};}},
     STAMP_BUCKET:{async put(key,contents,options){assert.equal(options.onlyIf.etagDoesNotMatch,'*');objects.set(key,contents);return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}}
   };
@@ -109,6 +110,23 @@ test('workspace spoofing, incomplete snapshots and remote images are rejected be
     assert.equal((await worker.fetch(request('/api/signing','POST',body),env)).status,400);
   }
   assert.equal(objects.size,0);
+});
+
+test('owner can page only their own signing records and recover the original capability on another device',async t=>{
+  const {env,objects}=await fixture(t),shares=[];
+  for(let i=0;i<27;i++)shares.push(await(await worker.fetch(request('/api/signing','POST',signingBody()),env)).json());
+  const first=await(await worker.fetch(request('/api/signing'),env)).json();
+  const second=await(await worker.fetch(request('/api/signing?offset='+first.nextOffset),env)).json();
+  assert.equal(first.items.length,25);assert.equal(second.items.length,2);assert.equal(second.nextOffset,null);
+  assert.equal(new Set([...first.items,...second.items].map(row=>row.id)).size,27);
+  assert.ok(first.items.every(row=>row.quotationId==='TEST-ONLY-001'));
+  assert.doesNotMatch(JSON.stringify(first),/workspace_id|snapshot_key|token_hash|\/s\//);
+  assert.deepEqual((await(await worker.fetch(request('/api/signing','GET',undefined,otherToken),env)).json()).items,[]);
+  const record=await(await worker.fetch(request('/api/signing/'+shares[0].id),env)).json();
+  assert.equal(record.url,shares[0].url);
+  const before=objects.size;delete env.SIGNING_LINK_SECRET;
+  assert.equal((await worker.fetch(request('/api/signing','POST',signingBody()),env)).status,503);assert.equal(objects.size,before);
+  for(const query of ['-1','1.5','100001','abc'])assert.equal((await worker.fetch(request('/api/signing?offset='+query),env)).status,400);
 });
 
 test('guest cannot use a Google bearer session or mutate the shared snapshot',async t=>{

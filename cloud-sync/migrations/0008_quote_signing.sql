@@ -2,6 +2,7 @@
 CREATE TABLE quote_signing_requests (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
+  quotation_id TEXT NOT NULL DEFAULT '',
   token_hash TEXT NOT NULL UNIQUE CHECK(length(token_hash) = 64),
   snapshot_key TEXT NOT NULL UNIQUE,
   snapshot_sha256 TEXT NOT NULL CHECK(length(snapshot_sha256) = 64),
@@ -36,6 +37,7 @@ ON quote_signing_requests(workspace_id, created_at DESC);
 CREATE TRIGGER quote_signing_immutable_snapshot
 BEFORE UPDATE ON quote_signing_requests
 WHEN NEW.id IS NOT OLD.id OR NEW.workspace_id IS NOT OLD.workspace_id
+  OR NEW.quotation_id IS NOT OLD.quotation_id
   OR NEW.token_hash IS NOT OLD.token_hash OR NEW.snapshot_key IS NOT OLD.snapshot_key
   OR NEW.snapshot_sha256 IS NOT OLD.snapshot_sha256
   OR NEW.created_at IS NOT OLD.created_at OR NEW.expires_at IS NOT OLD.expires_at

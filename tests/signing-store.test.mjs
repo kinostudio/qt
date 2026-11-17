@@ -2,10 +2,22 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {DatabaseSync} from 'node:sqlite';
-import {createSigningRequest,loadSigningSnapshot,revokeSigningRequest,signingSha256,SIGNING_SQL} from '../cloud-sync/src/signing-store.js';
+import {createSigningRequest,loadSigningSnapshot,revokeSigningRequest,signingSha256,signingShareToken,loadSigningSnapshotForOwner,SIGNING_SQL} from '../cloud-sync/src/signing-store.js';
 
 const migration=await fs.readFile('cloud-sync/migrations/0008_quote_signing.sql','utf8');
 const now=1794910000000;
+test('recoverable share tokens are scoped to secret and request without storing the raw token',async t=>{
+  const {db,bucket,objects,sqlite}=fixture(t),secret='test-only-link-key-not-a-real-secret-12345678';
+  const created=await createSigningRequest(db,bucket,'test-workspace',fakeSnapshot(),14,now,secret);
+  assert.equal(await signingShareToken(secret,created.id),created.token);
+  assert.notEqual(await signingShareToken(secret,crypto.randomUUID()),created.token);
+  assert.notEqual(await signingShareToken('different-test-only-link-key-123456789012345678',created.id),created.token);
+  assert.equal((await loadSigningSnapshotForOwner(db,bucket,'test-workspace',created.id,secret)).url,'https://quote.kinostudio.tw/s/'+created.token);
+  assert.equal((await loadSigningSnapshotForOwner(db,bucket,'test-workspace',created.id,'different-test-only-link-key-123456789012345678')).url,null);
+  assert.ok([...objects.values()].every(value=>!value.includes(created.token)));
+  assert.throws(()=>sqlite.prepare('UPDATE quote_signing_requests SET quotation_id=? WHERE id=?').run('CHANGED',created.id),/immutable signing snapshot/);
+  await assert.rejects(signingShareToken('weak',created.id),e=>e.status===503);
+});
 const fakeSnapshot=()=>({quotation:{header:{quotationId:'TEST-ONLY'},notes:[{text:'固定測試條款'}],signature:{vendorCompany:'測試公司'}},printScale:95,rendererVersion:1});
 function fixture(t) {
   const sqlite=new DatabaseSync(':memory:');

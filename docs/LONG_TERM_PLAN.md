@@ -133,6 +133,15 @@
 - `build-signing-client.mjs` 只輸出五個公開檔案，含no-store／no-referrer／noindex／CSP及單份連結路由，不含編輯台、備份或憑證。未新增或部署Cloudflare Pages／DNS，未啟用正式簽署、未套用migration，也未寫入正式D1／R2／OneDrive。
 - not_checked：客戶UI＋真實Worker Browser Run的完整整合、實體手機PDF閱讀器、建立／撤銷／狀態管理介面、免費額度總量保護與安全暫存清理。這些與先前遷站還原／OneDrive驗收都仍是正式公開前的門檻。
 
+### 編輯台簽署管理與跨裝置連結重取（2026-11-18，未部署）
+
+- 手機／桌面新增受旗標控制的「客戶簽署」入口，沿用既有Google登入與JSON／binary請求工具。固定快照＋實際PDF服務預覽後，須勾選確認才可建立1–30天客戶連結；帳號變更會關閉管理視窗。
+- 管理者清單每頁25筆，限定工作區、不讀整批R2快照；支援狀態整理、取得／複製客戶連結、下載已簽檔、二次確認撤銷。建立回應遺失時先讀取清單核對，不讓原按鈕盲目重送。
+- 新建API連結改用Worker Secret的HMAC-SHA-256＋隨機UUID產生，D1仍只存雜湊；管理者可在另一裝置重取同一連結。金鑰未設定則拒絕建立。只修改尚未正式套用的0008新增表定義，加入不可變報價單號供清單使用；沒有ALTER／清洗舊表。
+- passed：58項單元測試、隔離手機／桌面管理者UI流程（含回應遺失）、既有客戶簽署UI、手機差異面板與模擬OneDrive回歸、兩組隔離workerd D1/R2測試（含清單與重取連結）、快速／詳細實際Chromium PDF及渲染檢查。Worker dry-run 936.69KiB／gzip176.85KiB。
+- not_checked：管理者＋客戶＋實際Worker Browser Run完整整合、實體手機、正式Secret與免費總額度保護、安全暫存清理；遷站本機還原結果及OneDrive新站真實登入仍待核對。這些仍是公開與GitHub私人化前的門檻。
+- 本輪未設定正式Secret、未套用正式migration、未部署Worker或前端、未變更正式D1／R2／OneDrive資料。
+
 ## 自動續作
 
 已建立本對話 active goal；沿用並更新此對話既有 heartbeat `automation-6`，每小時續作一個安全工作批次。需本機 Codex 能執行；不代表離線雲端常駐服務。需使用者授權的步驟記錄並請求，不擅自繞過。

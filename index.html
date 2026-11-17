@@ -44,6 +44,8 @@
     <script src="./assets/pdf-form.js" defer></script>
     <script src="./assets/local-backup.js" defer></script>
     <script src="./assets/signing-export.js" defer></script>
+    <script src="./assets/signing-manager.js" defer></script>
+    <link rel="stylesheet" href="./assets/signing-manager.css">
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+CJK+TC:wght@400;500;700&display=swap');
@@ -2935,6 +2937,7 @@
             const [cloudAuthStatus, setCloudAuthStatus] = useState('idle');
             const [googleClientId, setGoogleClientId] = useState('');
             const [microsoftClientId, setMicrosoftClientId] = useState('');
+            const [signingEnabled, setSigningEnabled] = useState(false);
             const [cloudAuthUser, setCloudAuthUser] = useState(() => {
                 try { return JSON.parse(sessionStorage.getItem(CLOUD_AUTH_USER_STORAGE_KEY) || 'null'); }
                 catch { return null; }
@@ -3634,16 +3637,21 @@
                 }
                 return response.json();
             };
-            const cloudBinaryRequest = async path => {
+            const cloudBinaryRequest = async (path,options={}) => {
                 const syncKey = getCloudSyncKey();
                 if (!syncKey) throw new Error('SYNC_CANCELLED');
-                const response = await fetch(`${CLOUD_SYNC_API_URL}${path}`, { headers: { authorization: `Bearer ${syncKey}` } });
+                const response = await fetch(`${CLOUD_SYNC_API_URL}${path}`, { ...options,headers: { authorization: `Bearer ${syncKey}`,...(options.headers||{}) } });
                 if (!response.ok) {
                     const body = await response.json().catch(() => ({}));
                     throw new Error(body.error || `印章載入失敗 (${response.status})`);
                 }
                 return response.blob();
             };
+            const openSigningManager = () => {
+                if(!getCloudSyncKey()){setShowCloudKeyModal(true);return;}
+                window.KinoSigningManager.open({request:cloudRequest,binary:cloudBinaryRequest});
+            };
+            useEffect(()=>{window.KinoSigningManager?.close();},[cloudAuthUser?.email]);
             const blobToDataUrl = blob => new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onerror = () => reject(new Error('印章圖片轉換失敗'));
@@ -3656,6 +3664,7 @@
                     .then(config => {
                         setGoogleClientId(config.googleClientId || '');
                         setMicrosoftClientId(config.microsoftClientId || '');
+                        setSigningEnabled(config.signingEnabled===true);
                     })
                     .catch(error => console.warn('Cloud config load error', error));
             }, []);
@@ -4650,6 +4659,7 @@
 
                     <div id="desktop-root" style={{ display: mode === 'desktop' ? 'block' : 'none' }}>
                         <DesktopView 
+                            signingEnabled={signingEnabled} openSigningManager={openSigningManager}
                             data={data} setData={setData} updateField={updateField} calcs={calculations} compressImage={compressImage} stampAssets={stampAssets} onStampAssetsChange={handleStampAssetsChange}
                             handleOpen={handleOpen} handleSave={handleSave} handleSaveAs={handleSaveAs} handleReset={handleReset} handleManualSave={handleManualSave}
                             openClausePicker={() => setShowClausePicker(true)}
@@ -4673,6 +4683,7 @@
                     
                     <div id="mobile-root" style={{ display: mode === 'mobile' ? 'block' : 'none' }}>
                         <MobileView 
+                            signingEnabled={signingEnabled} openSigningManager={openSigningManager}
                             data={data} setData={setData} updateField={updateField} calcs={calculations} compressImage={compressImage} stampAssets={stampAssets} onStampAssetsChange={handleStampAssetsChange}
                             handleOpen={handleOpen} handleSave={handleSave} handleSaveAs={handleSaveAs} handleReset={handleReset} mode={mode}
                             openClausePicker={() => setShowClausePicker(true)}
@@ -4816,7 +4827,7 @@
             );
         };
 
-        const DesktopView = ({ data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, handleManualSave, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
+        const DesktopView = ({ signingEnabled, openSigningManager, data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, handleManualSave, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
             const handleLogoUpload = async (e) => { if (e.target.files[0]) { const base64 = await compressImage(e.target.files[0]); setData(prev => ({ ...prev, logo: base64 })); } };
             const [draggedNoteId, setDraggedNoteId] = useState(null);
             const [dragOverNoteId, setDragOverNoteId] = useState(null);
@@ -4868,6 +4879,7 @@
                                     <div className="flex min-h-[3.25rem] flex-wrap items-center justify-end gap-2 border-t border-gray-100 py-2">
                                         <button type="button" onClick={openDataManager} className="qt-toolbar-control qt-toolbar-button border border-kino/30 text-kino hover:bg-kino hover:text-white"><i className="fas fa-database"></i>資料庫管理</button>
                                         <CloudSyncControls onSync={syncCloudData} onManage={openCloudAuth} status={cloudSyncStatus} authUser={cloudAuthUser} />
+                                        {signingEnabled && <button type="button" onClick={openSigningManager} className="qt-toolbar-control qt-toolbar-button border border-kino/30 text-kino"><i className="fas fa-pen-nib"></i>客戶簽署</button>}
                                         <OneDriveControls onOpen={openOneDrive} status={oneDriveStatus} account={oneDriveAccount} folder={oneDriveFolder} autoSave={oneDriveAutoSave} />
                                         <PrintSplitButton value={printScale} onChange={onPrintScaleChange} onPrint={handlePrint} />
                                     </div>
@@ -5116,7 +5128,7 @@
             );
         };
 
-        const MobileView = ({ data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
+        const MobileView = ({ signingEnabled, openSigningManager, data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
             const [draggingIdx, setDraggingIdx] = useState(null);
             // [v1.08 Change] Animation Lock to prevent double-click race conditions
             const [isAnimating, setIsAnimating] = useState(false);
@@ -5294,6 +5306,7 @@
                                         <PrintSplitButton value={printScale} onChange={onPrintScaleChange} onPrint={handlePrint} fullWidth={true} />
                                     </div>
                                     <CloudSyncControls onSync={syncCloudData} onManage={openCloudAuth} status={cloudSyncStatus} compact={true} authUser={cloudAuthUser} />
+                                    {signingEnabled && <button type="button" onClick={openSigningManager} className="qt-toolbar-control qt-toolbar-button border border-kino/30 text-kino"><i className="fas fa-pen-nib"></i>客戶簽署</button>}
                                     <OneDriveControls onOpen={openOneDrive} status={oneDriveStatus} account={oneDriveAccount} folder={oneDriveFolder} autoSave={oneDriveAutoSave} compact={true} />
                                 </div>
                             </div>

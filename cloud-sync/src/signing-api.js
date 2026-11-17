@@ -1,4 +1,4 @@
-import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapshotForOwner,revokeSigningRequest} from './signing-store.js';
+import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapshotForOwner,revokeSigningRequest,listSigningRequests} from './signing-store.js';
 import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './signing-validation.js';
 import {loadSignedPdfForGuest,loadSignedPdfForOwner,submitSigningRequest} from './signing-submit.js';
 import {createSigningRenderSession} from './signing-browser.js';
@@ -76,13 +76,19 @@ export async function handleSigningOwner(request,env,auth,decodeImages=decodeIma
   const allowed=String(env.SIGNING_ALLOWED_EMAILS||'').split(',').map(email=>email.trim().toLowerCase()).filter(Boolean);
   if(auth?.type!=='google' || !allowed.includes(String(auth.user?.email||'').toLowerCase())) throw new SigningError('此帳號尚未開通客戶簽署',403);
   const path=new URL(request.url).pathname;
+  if(path==='/api/signing' && request.method==='GET') {
+    const offset=new URL(request.url).searchParams.get('offset')||'0';
+    if(!/^\d{1,6}$/.test(offset))throw new SigningError('簽署清單頁碼不正確');
+    return reply(await listSigningRequests(env.DB,auth.workspaceId,Number(offset)));
+  }
   if(path==='/api/signing' && request.method==='POST') {
+    if(!env.SIGNING_LINK_SECRET)throw new SigningError('簽署連結金鑰尚未設定',503);
     const {snapshot,lifetimeDays}=validateSigningCreate(await readSigningJson(request));
     if(!env.PDF_RATE_LIMITER) throw new SigningError('簽署用量保護尚未設定',503);
     const limit=await env.PDF_RATE_LIMITER.limit({key:auth.user.id});
     if(!limit.success) throw new SigningError('操作過於頻繁，請稍後重試',429);
     const fixedSnapshot=await decodeImages(env,snapshot);
-    const share=await createSigningRequest(env.DB,env.STAMP_BUCKET,auth.workspaceId,fixedSnapshot,lifetimeDays);
+    const share=await createSigningRequest(env.DB,env.STAMP_BUCKET,auth.workspaceId,fixedSnapshot,lifetimeDays,Date.now(),env.SIGNING_LINK_SECRET);
     return reply({...share,url:`https://quote.kinostudio.tw/s/${share.token}`},201);
   }
   const match=/^\/api\/signing\/([a-f0-9-]{36})(\/pdf)?$/.exec(path);
@@ -94,7 +100,7 @@ export async function handleSigningOwner(request,env,auth,decodeImages=decodeIma
     const fixed=await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id);
     return pdfReply(file,fixed.snapshot.quotation.header.quotationId);
   }
-  if(request.method==='GET') return reply(await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id));
+  if(request.method==='GET') return reply(await loadSigningSnapshotForOwner(env.DB,env.STAMP_BUCKET,auth.workspaceId,id,env.SIGNING_LINK_SECRET));
   if(request.method==='DELETE') {
     if(!await revokeSigningRequest(env.DB,auth.workspaceId,id)) throw new SigningError('找不到可撤銷的待簽版本',404);
     return reply({ok:true});
