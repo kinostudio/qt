@@ -34,7 +34,7 @@
 4. [x] 使用者確認建立獨立 `kinostudio/qt`。新庫已建立、主線及12個回退標籤已推送；原 `aaronkino/qt` 保留。公開DNS查詢兩個新名稱最初皆為NXDOMAIN。已依使用者要求透過Cloudflare網頁只新增 `qt` CNAME → `kino-quotation-editor.pages.dev`（Proxy，自動TTL），DNS記錄由23筆增至24筆；`quote` 尚未新增。
 5. [x] 已建立 `scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`；僅 `index.html` 與 `assets/`，拒絕資產符號連結。`tests/build-editor.test.mjs` 核對白名單、PDF模組與前期功能標記；12項本機測試通過。尚未接入新站部署；簽署站另建獨立白名單。
 6. [x] 獨立 Git 整合專案 `kino-quotation-editor` 已建立，來源 `kinostudio/qt` main；建置命令 `node scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`。首次部署 `9a2b4409-01e7-41d3-9aa2-f552777cb436` 顯示deploy/success，預覽為 `https://kino-quotation-editor.pages.dev`。舊GitHub Pages workflow僅允許原 `aaronkino/qt` 執行，避免新庫誤啟動GitHub Pages。尚需驗證後續push自動建置及自訂網域HTTPS。
-7. [ ] 新站使用既有 Google Client ID，新增來源與需要的 redirect URI；OneDrive 新增 SPA redirect URI `https://qt.kinostudio.tw/`。保留舊網址設定直到驗收完成，不重建帳號／工作區。
+7. [x] 既有 Google Client ID 已新增新站來源（使用者保存），新站實際登入 `kinostudio.tw@gmail.com` 並顯示同步完成。OneDrive 已由代理依使用者當下確認新增 SPA redirect URI `https://qt.kinostudio.tw/`，清單顯示新增成功且保留舊站／localhost。不重建帳號／工作區；OneDrive 新站實際登入仍待驗收。
 8. [x] 新站 HTTPS／字型驗證後，CORS 新增編輯台來源並保留舊站；PDF 字型與 CSP 改新站。Worker 版本 `19165970-f5d4-4dfe-a14c-43d19ffb3d03` 已部署，未改 D1／R2 綁定或資料。公開 OPTIONS 驗證新舊編輯台均204，客戶簽署網域403。
 9. [ ] 以假資料回歸：桌面與手機、登入恢復、差異／刪除衝突、OneDrive、列印70/85/100、快速／詳細 PDF、中文填寫存檔、印章跨格與頁碼。
 10. [ ] 舊站實際瀏覽器本機資料做可還原備份：草稿、完整專案、條款範本、分類、條款、印章圖片與版面設定；排除登入Token。不能用空白隔離瀏覽器的備份冒充使用者備份。
@@ -70,7 +70,7 @@
 - `qt.kinostudio.tw` 自訂網域、驗證與憑證狀態皆已 active，HTTPS200；字型與本機 SHA-256 相同。push 自動建置已由 `bb45cc6` 的部署 `d13a8679-ff30-4787-bc94-baa349caa067` 驗證成功。
 - 完整本機備份／還原工具已實作；17項單元測試與隔離手機跨網址匯出／還原／重新載入測試通過，沒有增加同步或 OneDrive 寫入。修復初次載入 effect 覆寫還原草稿的問題。這不是使用者正式資料已備份的證明。
 - 舊站僅新增只讀備份輔助頁 `https://aaronkino.github.io/qt/assets/migration-backup.html`（原庫 `d1c72cd`），HTTPS200；未替換舊站編輯台或後端。實際備份須在原本使用的瀏覽器／設定檔操作。
-- 仍需新增Google來源與Microsoft SPA redirect設定並完成實際登入驗收；使用者完整本機備份與新站還原驗收尚未完成。不得私人化或關閉原站。
+- Google來源與Microsoft SPA redirect設定已完成，Google新站登入已實際觀察；OneDrive實際登入及新站還原驗收尚未完成。不得私人化或關閉原站。
 - 每個工作批次更新此檔案，紀錄實際證據，區分 `passed`／`failed`／`not_checked`。不能因為程式寫完就勾選正式驗收完成。
 
 ### 印章介面增量（2026-11-17）
@@ -79,6 +79,16 @@
 - X／Y 位移新增滑桿，與毫米輸入雙向連動，維持原有格內限制及跨格選項。
 - 透明度與資料正規化範圍均改為0–100，既有預設96不變。
 - passed：18項單元測試、隔離手機操作、桌面寬度重開視窗、0／45／100透明度、JSON值保留及模擬OneDrive存檔；未對正式雲端資料寫入。not_checked：實體手機觸控與此增量的正式PDF下載。
+
+### 實際登入設定與備份驗收（2026-11-17）
+
+- Google Cloud 專案 `kino-quotation` 的既有 OAuth 用戶端已在頁面顯示 `https://qt.kinostudio.tw` 與 Pages 預覽來源，並有「OAuth 用戶端已儲存」通知；原3個來源保留。使用者自行完成設定，代理未重複提交。實際新站登入仍待驗收。
+- Microsoft Entra 已由使用者登入，已核對既有用戶端ID；依使用者當下同意只新增新站SPA回呼，清單已確認同時存在 localhost、舊GitHub站、新站三筆；未新增權限、密鑰或付費方案。
+- 目前 Edge 設定檔的舊站備份已實際下載、通過 `KinoLocalBackup.inspect` 完整性檢查：草稿、2專案、1範本、7分類、28條款、1印章，檔案1,555,844 bytes。另存專案外的私人備份目錄，不提交Git。
+- 新站初始安全副本已下載及驗證：草稿、0專案、0範本、7分類、16條款、0印章。使用者隨後自行Google登入並載入雲端，畫面顯示正確帳號及同步完成；代理未點擊同步合併或寫入。
+- 還原前已暫時登出網站Google，另下載及驗證登入後最新副本：草稿、3專案、1範本、7分類、29條款、1印章（1,562,634 bytes）。三份副本存放 `C:\Users\Aaron\Documents\Codex\QT Private Backups`，不含登入Token，不提交Git；不能代表其他裝置已備份。
+- 使用者已明確允許本機還原；準備選檔時瀏覽器回報 `Debugger unattached`。重新檢查同一頁籤及重新取得綁定各一次仍失敗，已停止UI操作。尚未點擊「還原到此瀏覽器並重新載入」或接受確認，不得宣稱已還原；下次先核對頁面及任何檔案選取對話框，不重複執行。
+- 本批次未寫入 D1／R2／OneDrive、未私人化GitHub、未停用舊站。Cloudflare CLI OAuth最近查詢回報登入失效，後續部署需重新授權；公開新站仍正常。
 
 ## 自動續作
 
