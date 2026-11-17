@@ -35,7 +35,7 @@
 5. [x] 已建立 `scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`；僅 `index.html` 與 `assets/`，拒絕資產符號連結。`tests/build-editor.test.mjs` 核對白名單、PDF模組與前期功能標記；12項本機測試通過。尚未接入新站部署；簽署站另建獨立白名單。
 6. [x] 獨立 Git 整合專案 `kino-quotation-editor` 已建立，來源 `kinostudio/qt` main；建置命令 `node scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`。首次部署 `9a2b4409-01e7-41d3-9aa2-f552777cb436` 顯示deploy/success，預覽為 `https://kino-quotation-editor.pages.dev`。舊GitHub Pages workflow僅允許原 `aaronkino/qt` 執行，避免新庫誤啟動GitHub Pages。尚需驗證後續push自動建置及自訂網域HTTPS。
 7. [ ] 新站使用既有 Google Client ID，新增來源與需要的 redirect URI；OneDrive 新增 SPA redirect URI `https://qt.kinostudio.tw/`。保留舊網址設定直到驗收完成，不重建帳號／工作區。
-8. [ ] CORS 新增編輯台來源；PDF 字型與允許載入來源改新站，先驗證新站字型可用，再部署依賴它的 Worker。
+8. [x] 新站 HTTPS／字型驗證後，CORS 新增編輯台來源並保留舊站；PDF 字型與 CSP 改新站。Worker 版本 `19165970-f5d4-4dfe-a14c-43d19ffb3d03` 已部署，未改 D1／R2 綁定或資料。公開 OPTIONS 驗證新舊編輯台均204，客戶簽署網域403。
 9. [ ] 以假資料回歸：桌面與手機、登入恢復、差異／刪除衝突、OneDrive、列印70/85/100、快速／詳細 PDF、中文填寫存檔、印章跨格與頁碼。
 10. [ ] 舊站實際瀏覽器本機資料做可還原備份：草稿、完整專案、條款範本、分類、條款、印章圖片與版面設定；排除登入Token。不能用空白隔離瀏覽器的備份冒充使用者備份。
 11. [ ] 新網域匯入備份、逐項核對；換網域的 localStorage／sessionStorage 不會自動轉移。Google／Microsoft 需重新登入。
@@ -67,8 +67,10 @@
 ## 目前下一步
 
 - 新庫與Git整合建置已建立。Cloudflare OAuth有Pages權限但無DNS記錄API權限；DNS由使用者授權的網頁操作完成，不擴大API金鑰權限。
-- `qt.kinostudio.tw` 自訂網域目前為pending，HTTPS最近一次回應522；不是已完成驗收。後續續作先核對該domain資源狀態與HTTPS，再更新字型依賴。不要反覆建立新部署或重建網域。
-- 仍需新增Google來源與Microsoft SPA redirect設定，完成驗收；完整本機備份／還原功能與實際備份尚未完成。不得私人化或關閉原站。
+- `qt.kinostudio.tw` 自訂網域、驗證與憑證狀態皆已 active，HTTPS200；字型與本機 SHA-256 相同。push 自動建置已由 `bb45cc6` 的部署 `d13a8679-ff30-4787-bc94-baa349caa067` 驗證成功。
+- 完整本機備份／還原工具已實作；17項單元測試與隔離手機跨網址匯出／還原／重新載入測試通過，沒有增加同步或 OneDrive 寫入。修復初次載入 effect 覆寫還原草稿的問題。這不是使用者正式資料已備份的證明。
+- 舊站僅新增只讀備份輔助頁 `https://aaronkino.github.io/qt/assets/migration-backup.html`（原庫 `d1c72cd`），HTTPS200；未替換舊站編輯台或後端。實際備份須在原本使用的瀏覽器／設定檔操作。
+- 仍需新增Google來源與Microsoft SPA redirect設定並完成實際登入驗收；使用者完整本機備份與新站還原驗收尚未完成。不得私人化或關閉原站。
 - 每個工作批次更新此檔案，紀錄實際證據，區分 `passed`／`failed`／`not_checked`。不能因為程式寫完就勾選正式驗收完成。
 
 ## 自動續作

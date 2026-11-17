@@ -42,6 +42,7 @@
     <script src="./assets/msal-browser-5.17.3.min.js"></script>
     <script src="./assets/pdf-export.js" defer></script>
     <script src="./assets/pdf-form.js" defer></script>
+    <script src="./assets/local-backup.js" defer></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+CJK+TC:wght@400;500;700&display=swap');
@@ -2046,7 +2047,32 @@
             );
         };
 
-        const DataManagerModal = ({ projects, clauses, categories, onClose, onCreateProject, onLoadProject, onSaveProjectContent, onRenameProject, onDeleteProject, onCreateClause, onSaveClause, onDeleteClause }) => {
+        const LocalBackupPanel = ({onExport,onRestore,canRestore}) => {
+            const [receipt,setReceipt]=useState(null), [selected,setSelected]=useState(null), [ack,setAck]=useState(false), [error,setError]=useState(''), [busy,setBusy]=useState(false);
+            const describe=c=>`${c.draft ? '含目前草稿；' : ''}${c.projects} 個專案、${c.templates} 份範本、${c.categories} 個分類、${c.clauses} 條條款、${c.stamps} 顆印章`;
+            const exportAll=async()=>{
+                setBusy(true);setError('');setAck(false);
+                try{
+                    const backup=await onExport();
+                    const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));
+                    const link=document.createElement('a');link.href=url;link.download='kino-qt-local-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+                    setReceipt({checksum:backup.checksum,counts:window.KinoLocalBackup.summary(backup.entries)});
+                }catch(e){setError(e.message);}finally{setBusy(false);}
+            };
+            const choose=async event=>{
+                const file=event.target.files?.[0];event.target.value='';setSelected(null);setError('');
+                if(!file) return;
+                try{if(file.size>20*1024*1024) throw new Error('備份超過 20 MB。');const text=await file.text();const result=await window.KinoLocalBackup.inspect(text);setSelected({...result,text});}catch(e){setError(e.message);}
+            };
+            const restoreAll=async()=>{
+                if(!selected || !receipt || !ack || !canRestore || busy) return;
+                if(!window.confirm('將以備份取代此網址的本機資料。雲端資料不會變更；請先關閉其他 QT 分頁。確定還原？')) return;
+                setBusy(true);setError('');
+                try{await onRestore(selected.text,receipt.checksum);}catch(e){setError(e.message);setBusy(false);}
+            };
+            return <section className="space-y-4 rounded-xl border bg-white p-4" aria-label="完整本機備份與還原"><h4 className="font-bold text-kino">完整本機備份與還原</h4><p className="text-xs leading-relaxed text-gray-600">換網址前，請先在舊站下載備份，再到新站還原。包含草稿、專案、條款、印章與設定；不含登入憑證，也不是雲端資料庫備份。備份含客戶與印章資料，請妥善保管。</p><button type="button" disabled={busy} onClick={exportAll} className="rounded-lg bg-kino px-4 py-2 text-sm font-bold text-white disabled:opacity-50">下載完整本機備份</button>{receipt && <p className="text-xs text-emerald-700">已啟動下載：{describe(receipt.counts)}。請確認檔案已保存。</p>}<label className="block text-sm font-bold text-gray-700">選擇完整備份檔<input type="file" accept=".json,application/json" disabled={busy} onChange={choose} className="mt-2 block w-full text-xs"/></label>{selected && <div className="rounded-lg bg-blue-50 p-3 text-xs"><p>備份來源：{selected.backup.sourceOrigin}</p><p className="mt-1">{describe(selected.counts)}</p><p className="mt-1">檢查碼正確。還原會取代此網址本機資料，不會自動合併或上傳。</p></div>}<label className="flex items-start gap-2 text-xs text-gray-600"><input type="checkbox" checked={ack} disabled={!receipt || busy} onChange={e=>setAck(e.target.checked)}/>我已確認另存目前資料的備份，並已關閉其他 QT 分頁</label>{!canRestore && <p className="text-xs text-amber-800">還原前請先登出 Google、OneDrive 並關閉 OneDrive 自動儲存，避免自動同步。還原後需重新登入。</p>}<button type="button" disabled={!selected || !receipt || !ack || !canRestore || busy} onClick={restoreAll} className="rounded-lg border border-red-300 px-4 py-2 text-sm font-bold text-red-700 disabled:opacity-40">還原到此瀏覽器並重新載入</button>{error && <p role="alert" className="whitespace-pre-wrap text-sm text-red-700">{error}</p>}</section>;
+        };
+        const DataManagerModal = ({ projects, clauses, categories, onClose, onCreateProject, onLoadProject, onSaveProjectContent, onRenameProject, onDeleteProject, onCreateClause, onSaveClause, onDeleteClause, onExportLocalBackup, onRestoreLocalBackup, canRestoreLocalBackup }) => {
             const [tab, setTab] = useState('projects');
             const [newProjectName, setNewProjectName] = useState('');
             const [newClauseCategory, setNewClauseCategory] = useState(categories.find(category => category.name === '智慧財產權')?.id || categories[0]?.id || '');
@@ -2060,14 +2086,15 @@
                     <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-gray-50 shadow-2xl">
                         <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 sm:px-5">
                             <div><h3 className="font-bold text-kino">資料庫管理</h3><p className="text-xs text-gray-400">管理完整專案與可重複使用的單條條款</p></div>
-                            <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-700" aria-label="關閉資料庫管理"><i className="fas fa-times"></i></button>
+                            <button type="button" onClick={onClose} className="delete-action shrink-0" aria-label="關閉資料庫管理"><span aria-hidden="true">×</span></button>
                         </div>
                         <div className="flex border-b border-gray-200 bg-white px-4">
                             <button type="button" onClick={() => setTab('projects')} className={`border-b-2 px-4 py-3 text-sm font-bold ${tab === 'projects' ? 'border-kino text-kino' : 'border-transparent text-gray-400'}`}>專案（{projects.length}）</button>
                             <button type="button" onClick={() => setTab('clauses')} className={`border-b-2 px-4 py-3 text-sm font-bold ${tab === 'clauses' ? 'border-kino text-kino' : 'border-transparent text-gray-400'}`}>條款資料庫（{clauses.length}）</button>
+                            <button type="button" onClick={() => setTab('backup')} className={`border-b-2 px-3 py-3 text-sm font-bold ${tab === 'backup' ? 'border-kino text-kino' : 'border-transparent text-gray-400'}`}>備份／遷站</button>
                         </div>
                         <div className="overflow-y-auto p-4 sm:p-5">
-                            <div className="mb-4 grid gap-2 sm:grid-cols-2" aria-label="儲存類型說明">
+                            {tab!=='backup' && <div className="mb-4 grid gap-2 sm:grid-cols-2" aria-label="儲存類型說明">
                                 <button type="button" onClick={() => setTab('projects')} className={`rounded-xl border p-3 text-left transition ${tab === 'projects' ? 'border-kino bg-kino/5 ring-1 ring-kino/10' : 'border-gray-200 bg-white hover:border-kino/30'}`}>
                                     <span className="flex items-center gap-2 text-sm font-bold text-kino"><i className="fas fa-folder"></i>儲存完整專案</span>
                                     <span className="mt-1 block text-xs leading-relaxed text-gray-500">保存這張報價的客戶資料、金額、服務細項、付款方式、條款與簽署設定，之後可整份載入繼續修改。</span>
@@ -2077,7 +2104,8 @@
                                     <span className="mt-1 block text-xs leading-relaxed text-gray-500">每條條款可分類、標示嚴謹程度並個別新增、修改或刪除；從「選擇條款」視窗勾選後才加入目前報價。</span>
                                 </button>
                             </div>
-                            {tab === 'projects' ? (
+                            }
+                            {tab === 'backup' ? <LocalBackupPanel onExport={onExportLocalBackup} onRestore={onRestoreLocalBackup} canRestore={canRestoreLocalBackup}/> : tab === 'projects' ? (
                                 <>
                                     <div className="mb-4 flex flex-col gap-2 rounded-xl bg-kino/5 p-3 sm:flex-row">
                                         <input value={newProjectName} onChange={event => setNewProjectName(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-kino/20 bg-white px-3 py-2 text-sm outline-none focus:border-kino" placeholder="新專案名稱（儲存目前畫面內容）" />
@@ -2884,7 +2912,12 @@
         const App = () => {
             const getResponsiveMode = () => window.matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop';
             const [mode, setMode] = useState(getResponsiveMode);
-            const [data, _setData] = useState(getInitialData());
+            const [data, _setData] = useState(() => {
+                try {
+                    const saved=localStorage.getItem('kino_quotation_draft_v2');
+                    return saved ? normalizeQuotationData(JSON.parse(saved)) : getInitialData();
+                } catch(error) {console.error('Local draft load failed',error);return getInitialData();}
+            });
             const [fileHandle, setFileHandle] = useState(null);
             const [contractTemplates, setContractTemplates] = useState(loadContractTemplates);
             const [projectLibrary, setProjectLibrary] = useState(loadProjectLibrary);
@@ -2945,7 +2978,7 @@
                 setTimeout(() => setToast(null), 2000);
             };
 
-            const [history, setHistory] = useState([getInitialData()]);
+            const [history, setHistory] = useState([data]);
             const [historyIndex, setHistoryIndex] = useState(0);
             const historyTimeoutRef = useRef(null);
             const printPaginationCleanupRef = useRef(null);
@@ -3297,18 +3330,6 @@
                 }
             };
 
-            useEffect(() => {
-                const saved = localStorage.getItem('kino_quotation_draft_v2');
-                if (saved) { 
-                    try { 
-                        const parsed = JSON.parse(saved); 
-                        const loadedData = normalizeQuotationData(parsed);
-                        _setData(loadedData);
-                        setHistory([loadedData]); 
-                        setHistoryIndex(0);
-                    } catch (e) { console.error("Load error", e); } 
-                }
-            }, []);
 
             useEffect(() => { localStorage.setItem('kino_quotation_draft_v2', JSON.stringify(data)); }, [data]);
             useEffect(() => { localStorage.setItem(CONTRACT_TEMPLATE_STORAGE_KEY, JSON.stringify(contractTemplates)); }, [contractTemplates]);
@@ -4592,6 +4613,9 @@
                     />}
                     {showClausePicker && <ClausePickerModal clauses={clauseLibrary} categories={clauseCategories} onImport={importSelectedClauses} onClose={() => setShowClausePicker(false)} onCreateCategory={createClauseCategory} onSaveCategory={saveClauseCategory} onDeleteCategory={deleteClauseCategory} onCreateClause={createClauseRecord} onSaveClause={saveClauseRecord} onDeleteClause={deleteClauseRecord} />}
                     {showDataManager && <DataManagerModal
+                        canRestoreLocalBackup={!getCloudSyncKey() && !cloudAuthUser && !oneDriveAccount && !oneDriveAutoSave && oneDriveStatus!=='saving' && cloudSyncStatus!=='syncing'}
+                        onExportLocalBackup={async()=>{localStorage.setItem('kino_quotation_draft_v2',JSON.stringify(data));return window.KinoLocalBackup.create(localStorage,window.location.origin);}}
+                        onRestoreLocalBackup={async(text,checksum)=>{if(getCloudSyncKey() || cloudAuthUser || oneDriveAccount || oneDriveAutoSave || cloudSyncStatus==='syncing') throw new Error('請先登出雲端帳號並關閉自動儲存。');await oneDriveWrites.current;await window.KinoLocalBackup.restore(localStorage,text,checksum);window.location.reload();}}
                         projects={projectLibrary}
                         clauses={clauseLibrary}
                         categories={clauseCategories}

@@ -25,9 +25,9 @@ const assert = require('node:assert/strict');
     localStorage.setItem('kino_quotation_project_library_v1',JSON.stringify([{id:'mock-project-id',name:'美科尾牙平面攝影',data:{header:{quotationId:'測試報價單'}}}]));
     localStorage.setItem('kino_quotation_stamp_assets_v1',JSON.stringify([{id:'mock-stamp',name:'本機印章',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a3sAAAAASUVORK5CYII=',versionId:'local-version'}]));
   },{clause});
-  await page.route('**/*', async route => {
+  await context.route('**/*', async route => {
     const request=route.request(), url=request.url();
-    if (url.includes('msal-browser-5.17.3.min.js')) return route.fulfill({status:200,contentType:'application/javascript',body:`window.msal={InteractionRequiredAuthError:class extends Error{},PublicClientApplication:class {async initialize(){} async handleRedirectPromise(){return null} getAllAccounts(){return [{homeAccountId:'test-account',username:'test@example.invalid'}]} setActiveAccount(a){this.a=a} getActiveAccount(){return this.a} async acquireTokenSilent(){return {accessToken:'mock'}}}};`});
+    if (url.includes('msal-browser-5.17.3.min.js')) return route.fulfill({status:200,contentType:'application/javascript',body:`window.msal={InteractionRequiredAuthError:class extends Error{},PublicClientApplication:class {async initialize(){} async handleRedirectPromise(){return null} getAllAccounts(){return window.__backupRestoreTest ? [] : [{homeAccountId:'test-account',username:'test@example.invalid'}]} setActiveAccount(a){this.a=a} getActiveAccount(){return this.a} async acquireTokenSilent(){return {accessToken:'mock'}}}};`});
     if (url.includes('kino-quotation-data-api.film-kinostudio.workers.dev')) {
       if (request.method()==='OPTIONS') return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'GET,POST,PUT,OPTIONS','access-control-allow-headers':'*'}});
       calls.push(request.method()+' '+new URL(url).pathname);
@@ -70,7 +70,7 @@ const assert = require('node:assert/strict');
       }
       return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:'{"value":[]}'});
     }
-    if (url.startsWith('https://qt.test/')) {
+    if (url.startsWith('https://qt.test/') || url.startsWith('https://newqt.test/')) {
       const path=require('node:path'), fs=require('node:fs');
       const root=path.resolve(__dirname,'..'), target=path.resolve(root,'.'+decodeURIComponent(new URL(url).pathname));
       if (!target.startsWith(root+path.sep)) throw Error('Invalid fixture path');
@@ -128,8 +128,58 @@ const assert = require('node:assert/strict');
   assert.equal(uploads.length,3,'手動 OneDrive 存檔未送出');
   assert.equal(JSON.parse(uploads[2].body).header.validity,'模擬較新內容');
   assert.deepEqual(errors,[]);
+  await page.getByRole('button',{name:'關閉 OneDrive 設定'}).click();
+  await page.getByRole('button',{name:'資料庫管理',exact:true}).click();
+  await page.getByRole('button',{name:'備份／遷站',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'還原到此瀏覽器並重新載入'}).isEnabled(),false,'登入期間不可還原');
+  const backupDownload=page.waitForEvent('download');
+  await page.getByRole('button',{name:'下載完整本機備份',exact:true}).click();
+  const backupPath=await (await backupDownload).path();
+  const backupText=require('node:fs').readFileSync(backupPath,'utf8');
+  assert.ok(!backupText.includes('mock-token'));
+  const backup=JSON.parse(backupText);
+  assert.equal(JSON.parse(backup.entries.kino_quotation_project_library_v1)[0].name,'美科尾牙平面攝影');
+  await page.screenshot({path:'tmp/backup-mobile.png'});
+  await page.getByRole('button',{name:'關閉資料庫管理'}).click();
+  const dest=await context.newPage();
+  dest.setDefaultTimeout(10000);
+  await dest.addInitScript(()=>{window.__backupRestoreTest=true;localStorage.setItem('kino_quotation_mobile_toolbar_expanded','true');});
+  await dest.goto('https://newqt.test/index.html',{waitUntil:'domcontentloaded',timeout:45000});
+  await dest.getByRole('button',{name:'資料庫管理',exact:true}).waitFor({timeout:30000});
+  await dest.waitForTimeout(1000);
+  await dest.getByRole('button',{name:'資料庫管理',exact:true}).click();
+  await dest.getByRole('button',{name:'備份／遷站',exact:true}).click();
+  const safety=dest.waitForEvent('download');
+  await dest.getByRole('button',{name:'下載完整本機備份',exact:true}).click();
+  await safety;
+  await dest.locator('input[type=file]:visible').setInputFiles(backupPath);
+  await dest.getByText('檢查碼正確。還原會取代此網址本機資料，不會自動合併或上傳。').waitFor();
+  await dest.getByRole('checkbox',{name:'我已確認另存目前資料的備份，並已關閉其他 QT 分頁'}).check();
+  const writeCount=calls.filter(c=>!c.startsWith('GET')).length, uploadCount=uploads.length;
+  dest.once('dialog',dialog=>dialog.accept());
+  await dest.getByRole('button',{name:'還原到此瀏覽器並重新載入'}).click();
+  await dest.waitForLoadState('load');
+  await dest.getByRole('button',{name:'快速報價',exact:true}).first().waitFor({timeout:30000});
+  await dest.waitForFunction(()=>JSON.parse(localStorage.getItem('kino_quotation_draft_v2') || '{}').header?.validity==='模擬較新內容',{},{timeout:10000});
+  const restored=await dest.evaluate(()=>({draft:JSON.parse(localStorage.getItem('kino_quotation_draft_v2')),projects:JSON.parse(localStorage.getItem('kino_quotation_project_library_v1')),autosave:localStorage.getItem('kino_quotation_onedrive_autosave_v1'),token:sessionStorage.getItem('kino_quotation_cloud_auth_token')}));
+  assert.equal(restored.projects[0].name,'美科尾牙平面攝影');
+  assert.equal(restored.draft.header.validity,'模擬較新內容');
+  assert.equal(restored.autosave,'false');assert.equal(restored.token,null);
+  assert.equal(calls.filter(c=>!c.startsWith('GET')).length,writeCount);
+  assert.equal(uploads.length,uploadCount);
+  await dest.close();
+  const helper=await context.newPage();
+  await helper.goto('https://qt.test/assets/migration-backup.html');
+  const legacyExport=helper.waitForEvent('download');
+  await helper.getByRole('button',{name:'下載此網址的完整本機備份'}).click();
+  const legacyFile=await (await legacyExport).path();
+  const legacyBackup=JSON.parse(require('node:fs').readFileSync(legacyFile,'utf8'));
+  assert.equal(legacyBackup.entries.kino_quotation_draft_v2,backup.entries.kino_quotation_draft_v2);
+  assert.ok(!JSON.stringify(legacyBackup).includes('mock-token'));
+  assert.equal(calls.filter(c=>!c.startsWith('GET')).length,writeCount);
+  await helper.close();
+  console.log('PASS 兩個隔離網址完整本機備份／還原，未觸發雲端寫入');
   if (process.env.TEST_PDF==='1') {
-    await page.getByRole('button',{name:'關閉 OneDrive 設定'}).click();
     const download=page.waitForEvent('download',{timeout:60000});
     await page.getByRole('button',{name:'下載報價單 PDF',exact:true}).first().click();
     const file=await download;
