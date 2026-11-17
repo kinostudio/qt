@@ -115,6 +115,15 @@
 - 全程未套用正式migration、未部署Worker／前端、未寫入現有雲端資料。遷站驗收與Edge還原結果仍待核對，GitHub不提前私人化。
 - 最終驗證：全套46項單元測試、本機Chromium圖片驗證、兩組隔離workerd實際D1/R2測試均通過；Worker dry-run 915.61KiB（gzip172.34KiB），沒有部署。原有PDF下載／同步測試也保留通過。
 
+### 現有版型固定PDF接線與實際產檔驗收
+
+- 編輯台新增本機快照捕捉事件，沿用原分頁器、比例、樣式及圖片，將SVG／圖片固定為PNG；沒有建立雲端連結的UI，也沒有自動送出。修復列印比例字串與API整數驗證不相容。
+- 簽署產檔沿用 `pdf-render.js`；伺服器只替換四個甲方欄位及簽名，不改金額、條款、乙方資料。過長資料在接受簽署前拒絕；已簽檔是固定PDF，不保留可編輯表單。
+- 開發分支接上HTTP送出與待簽預覽；原 `SIGNING_ENABLED` 和新增 `SIGNING_SUBMIT_ENABLED` 正式設定均未啟用。預覽快取核對SHA-256，產檔期間撤銷不能再發布預覽。
+- passed：50項單元測試、Chromium實際圖片驗證、兩組隔離workerd D1/R2測試、Worker dry-run（932.47KiB／gzip175.95KiB）。`tests/signing-render.cjs` 從真正編輯頁擷取快速／詳細版型，實際產生PDF，驗證1／2頁不增加、只有甲方文字及圖片改變、已簽檔無AcroForm；另測過長甲方資料拒絕及稅前10萬／稅後105,000金額保留。已渲染圖片檢查第一頁簽署區及詳細細項頁。原有隔離手機差異面板、Snackbar、印章操作與模擬OneDrive存檔也通過。
+- not_checked：正式Browser Run、客戶手機完整簽署、填寫後送出前預覽、正式部署。暫存安全清理、編輯台建立與客戶頁仍待完成；不宣稱簽署已上線。
+- 本批未套用正式migration、未部署正式Worker／前端、未寫入既有D1／R2／OneDrive；Edge還原結果與OneDrive新站登入仍待實際核對。
+
 ## 自動續作
 
 已建立本對話 active goal；沿用並更新此對話既有 heartbeat `automation-6`，每小時續作一個安全工作批次。需本機 Codex 能執行；不代表離線雲端常駐服務。需使用者授權的步驟記錄並請求，不擅自繞過。

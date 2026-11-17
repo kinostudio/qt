@@ -43,6 +43,7 @@
     <script src="./assets/pdf-export.js" defer></script>
     <script src="./assets/pdf-form.js" defer></script>
     <script src="./assets/local-backup.js" defer></script>
+    <script src="./assets/signing-export.js" defer></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+CJK+TC:wght@400;500;700&display=swap');
@@ -3451,6 +3452,21 @@
                 window.addEventListener('quotation-download-pdf', download);
                 return () => window.removeEventListener('quotation-download-pdf', download);
             }, [data, stampAssets, printScale]);
+            useEffect(() => {
+                const capture=async event=>{
+                    if(typeof event.detail?.resolve!=='function' || typeof event.detail?.reject!=='function') return;
+                    const previousScale=printScaleRef.current;
+                    try {
+                        await document.fonts.load('12px KinoPrintTC');await document.fonts.ready;
+                        printScaleRef.current=normalizePrintScaleValue(event.detail.scale||printScale);
+                        preparePrintPagination();
+                        event.detail.resolve(await window.KinoSigningExport.capture(data,stampAssets,document.querySelector('.print-pagination-root'),printScaleRef.current));
+                    } catch(error) {event.detail.reject(error);}
+                    finally {printPaginationCleanupRef.current?.();printScaleRef.current=previousScale;}
+                };
+                window.addEventListener('quotation-signing-snapshot',capture);
+                return ()=>window.removeEventListener('quotation-signing-snapshot',capture);
+            },[data,stampAssets,printScale]);
             const handlePrintScaleChange = value => {
                 const nextScale = normalizePrintScaleValue(value);
                 setPrintScale(nextScale);
@@ -4785,7 +4801,7 @@
                                             <tr><th>電話</th><td data-pdf-client-field="clientPhone">{data.signature.clientPhone || '　'}</td><td>{data.signature.vendorPhone || '　'}</td></tr>
                                             <tr>
                                                 <th>簽署</th>
-                                                <td><div className="quick-acceptance-signature">{data.signature.clientSigImg ? <img src={data.signature.clientSigImg} alt="甲方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.clientStamp} asset={stampAssets.find(asset => asset.id === data.signature.clientStamp?.assetId)} /></div></div></td>
+                                                <td><div data-signing-client-signature="true" className="quick-acceptance-signature">{data.signature.clientSigImg ? <img src={data.signature.clientSigImg} alt="甲方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.clientStamp} asset={stampAssets.find(asset => asset.id === data.signature.clientStamp?.assetId)} /></div></div></td>
                                                 <td><div className="quick-acceptance-signature">{data.signature.vendorSigImg ? <img src={data.signature.vendorSigImg} alt="乙方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.vendorStamp} asset={stampAssets.find(asset => asset.id === data.signature.vendorStamp?.assetId)} /></div></div></td>
                                             </tr>
                                             {data.printSettings.showSigDate && <tr><th>日期</th><td colSpan="2">{data.signature.signatureDate || '　　　　'}</td></tr>}

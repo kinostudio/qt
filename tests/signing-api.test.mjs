@@ -47,6 +47,15 @@ test('guest CORS cannot unlock editor sync APIs or create signing requests',asyn
   assert.equal((await worker.fetch(request('/api/signing','POST',signingBody(),null),env)).status,401);
 });
 
+test('fixed print documents reject scripts, event handlers and remote images before storage',async t=>{
+  const {env,objects}=await fixture(t);
+  for(const html of ['<script>alert(1)</script>','<img src="https://untrusted.test/x.png">','<div onclick="alert(1)">x</div>']) {
+    const body=signingBody();body.snapshot.printDocument.html+=html;
+    assert.equal((await worker.fetch(request('/api/signing','POST',body),env)).status,400);
+  }
+  assert.equal(objects.size,0);
+});
+
 test('confirmed owner creation, capability reading, workspace isolation and revocation work end to end',async t=>{
   const {env,sqlite,objects}=await fixture(t);
   const created=await worker.fetch(request('/api/signing','POST',signingBody()),env);
@@ -58,6 +67,7 @@ test('confirmed owner creation, capability reading, workspace isolation and revo
   assert.equal(guest.status,200);assert.equal(guest.headers.get('cache-control'),'no-store');
   assert.equal(guest.headers.get('referrer-policy'),'no-referrer');
   const quote=await guest.json();assert.equal(quote.snapshot.quotation.header.quotationId,'TEST-ONLY-001');
+  assert.equal(quote.snapshot.printDocument,undefined);assert.equal(quote.canSubmit,false);
   assert.ok(!JSON.stringify(quote).includes('user:test-owner'));assert.ok(!JSON.stringify(quote).includes('snapshot_key'));
   assert.equal((await worker.fetch(request('/api/signing/'+share.id,'GET',undefined,otherToken),env)).status,404);
   assert.equal((await worker.fetch(request('/api/signing/'+share.id,'DELETE',undefined,otherToken),env)).status,404);
@@ -104,7 +114,7 @@ test('workspace spoofing, incomplete snapshots and remote images are rejected be
 test('guest cannot use a Google bearer session or mutate the shared snapshot',async t=>{
   const {env,objects}=await fixture(t);
   assert.equal((await worker.fetch(request('/api/signing/guest'),env)).status,404);
-  assert.equal((await worker.fetch(new Request('https://api.test/api/signing/guest',{method:'POST',headers:{Origin:'https://quote.kinostudio.tw'}}),env)).status,405);
+  assert.equal((await worker.fetch(new Request('https://api.test/api/signing/guest',{method:'POST',headers:{Origin:'https://quote.kinostudio.tw'}}),env)).status,503);
   assert.equal(objects.size,0);
 });
 

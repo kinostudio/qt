@@ -1,8 +1,10 @@
 import {SigningError,createSigningRequest,loadSigningSnapshot,loadSigningSnapshotForOwner,revokeSigningRequest} from './signing-store.js';
 import {readSigningJson,validateSigningCreate,rasterizeSigningImages} from './signing-validation.js';
-import {loadSignedPdfForGuest,loadSignedPdfForOwner} from './signing-submit.js';
+import {loadSignedPdfForGuest,loadSignedPdfForOwner,submitSigningRequest} from './signing-submit.js';
+import {createSigningRenderSession} from './signing-browser.js';
+import {loadSigningPreview} from './signing-preview.js';
 
-export const isSigningGuestPath=path=>path==='/api/signing/guest' || path==='/api/signing/guest/pdf';
+export const isSigningGuestPath=path=>['/api/signing/guest','/api/signing/guest/pdf','/api/signing/guest/preview'].includes(path);
 
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{
   'content-type':'application/json; charset=utf-8','cache-control':'no-store',
@@ -34,15 +36,35 @@ async function decodeImagesUsingBrowser(env,snapshot) {
 }
 
 export async function handleSigningGuest(request,env) {
-  if(request.method!=='GET') throw new SigningError('不支援此操作',405);
   const header=request.headers.get('authorization')||'';
   const token=header.startsWith('Quote ')?header.slice(6):'';
+  const path=new URL(request.url).pathname;
+  const allowRender=async()=>{
+    if(!env.PDF_RATE_LIMITER) throw new SigningError('簽署用量保護尚未設定',503);
+    return (await env.PDF_RATE_LIMITER.limit({key:'signing:documents'})).success;
+  };
+  if(request.method==='POST' && path==='/api/signing/guest') {
+    if(env.SIGNING_SUBMIT_ENABLED!=='true') throw new SigningError('客戶簽署送出尚未開放',503);
+    const session=createSigningRenderSession(env);
+    try {
+      const result=await submitSigningRequest(env.DB,env.STAMP_BUCKET,token,await readSigningJson(request),{...session,allowRender});
+      return reply(result,result.status==='signed'?200:202);
+    } finally {await session.close();}
+  }
+  if(request.method!=='GET') throw new SigningError('不支援此操作',405);
+  if(path==='/api/signing/guest/preview') {
+    const session=createSigningRenderSession(env);
+    try {const file=await loadSigningPreview(env.DB,env.STAMP_BUCKET,token,{...session,allowRender});return pdfReply(file,file.quotationId);}
+    finally {await session.close();}
+  }
   if(new URL(request.url).pathname==='/api/signing/guest/pdf') {
     const file=await loadSignedPdfForGuest(env.DB,env.STAMP_BUCKET,token);
     const fixed=await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token);
     return pdfReply(file,fixed.snapshot.quotation.header.quotationId);
   }
-  return reply(await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token));
+  const fixed=await loadSigningSnapshot(env.DB,env.STAMP_BUCKET,token);
+  const {printDocument,...visible}=fixed.snapshot;
+  return reply({...fixed,snapshot:visible,canSubmit:env.SIGNING_SUBMIT_ENABLED==='true'});
 }
 
 export async function handleSigningOwner(request,env,auth,decodeImages=decodeImagesUsingBrowser) {

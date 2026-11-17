@@ -5,6 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createSigningRequest,revokeSigningRequest,signingSha256} from '../cloud-sync/src/signing-store.js';
 import {submitSigningRequest,loadSignedPdfForGuest,loadSignedPdfForOwner} from '../cloud-sync/src/signing-submit.js';
 import {signingBody} from './fixtures/signing.mjs';
+import {loadSigningPreview} from '../cloud-sync/src/signing-preview.js';
 
 const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a3sAAAAASUVORK5CYII=';
 // Opaque renderer test bytes only: these tests verify storage, not PDF layout or validity.
@@ -13,14 +14,39 @@ const migration=await fs.readFile('cloud-sync/migrations/0008_quote_signing.sql'
 async function fixture(t) {
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(migration);t.after(()=>sqlite.close());
   const db={prepare(sql){return {bind(...args){const params=Object.fromEntries(args.map((value,i)=>['?'+(i+1),value]));return {async first(){return sqlite.prepare(sql).get(params)||null;},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(params).changes)}};}};}};}};
-  const objects=new Map();
-  const bucket={async put(key,value,options){assert.deepEqual(options.onlyIf,{etagDoesNotMatch:'*'});if(objects.has(key))return null;objects.set(key,typeof value==='string'?value:new Uint8Array(value));return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}};
+  const objects=new Map(),metadata=new Map();
+  const bucket={async put(key,value,options){assert.deepEqual(options.onlyIf,{etagDoesNotMatch:'*'});if(objects.has(key))return null;objects.set(key,typeof value==='string'?value:new Uint8Array(value));metadata.set(key,options.customMetadata);return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,customMetadata:metadata.get(key),async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}};
   let time=Date.now(),renders=0,verifications=0;
   const services={clock:()=>time,async allowRender(){return true;},async validateImage(){verifications++;},async renderPdf(){renders++;return pdf;}};
   const share=await createSigningRequest(db,bucket,'user:test',signingBody().snapshot,14,time);
   const body={idempotencyKey:crypto.randomUUID(),snapshotSha256:share.snapshotSha256,clientCompany:'測試甲方',clientContact:'測試代表',clientTaxId:'',clientPhone:'',signatureImage:png,signatureKind:'handwritten',consent:true};
   return {sqlite,db,bucket,objects,services,share,body,counts:()=>({renders,verifications}),advance:ms=>{time+=ms;}};
 }
+
+test('pending preview is cached without accepting a signature and rejects tampered PDF',async t=>{
+  const f=await fixture(t);
+  const first=await loadSigningPreview(f.db,f.bucket,f.share.token,f.services);
+  assert.deepEqual(first.bytes,pdf);
+  assert.deepEqual(await loadSigningPreview(f.db,f.bucket,f.share.token,f.services),first);
+  assert.equal(f.counts().renders,1);
+  assert.equal(f.sqlite.prepare('SELECT status FROM quote_signing_requests').get().status,'pending');
+  const key=[...f.objects.keys()].find(key=>key.includes('/preview-'));
+  f.objects.set(key,new TextEncoder().encode('%PDF-tampered'));
+  await assert.rejects(loadSigningPreview(f.db,f.bucket,f.share.token,f.services),error=>error.status===503);
+});
+
+test('revocation while producing a preview prevents publishing or returning it',async t=>{
+  const f=await fixture(t);
+  f.services.renderPdf=async()=>{await revokeSigningRequest(f.db,'user:test',f.share.id);return pdf;};
+  await assert.rejects(loadSigningPreview(f.db,f.bucket,f.share.token,f.services),error=>error.status===404);
+  assert.ok(![...f.objects.keys()].some(key=>key.includes('/preview-')));
+});
+
+test('preview usage limit fails before rendering or writing a cached PDF',async t=>{
+  const f=await fixture(t);f.services.allowRender=async()=>false;
+  await assert.rejects(loadSigningPreview(f.db,f.bucket,f.share.token,f.services),error=>error.status===429);
+  assert.equal(f.counts().renders,0);assert.equal(f.objects.size,1);
+});
 
 test('first consent freezes client data; identical retry returns the exact same PDF without rerendering',async t=>{
   const f=await fixture(t);

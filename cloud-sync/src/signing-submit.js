@@ -27,7 +27,8 @@ export async function submitSigningRequest(db,bucket,token,body,services) {
   if(row.status==='pending') {
     if(!await services.allowRender(row.id)) throw new SigningError('操作過於頻繁，請稍後重試',429);
     permitted=true;
-    await services.validateImage(submission.signatureImage);
+    const fixed=await loadSigningSnapshotForOwner(db,bucket,row.workspace_id,row.id);
+    await services.validateImage(submission.signatureImage,{snapshot:fixed.snapshot,submission});
     const key=`quote-signing/v1/${row.id}/submissions/${crypto.randomUUID()}.json`;
     const object=await bucket.put(key,text,{onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/json',cacheControl:'private, no-store'},customMetadata:{sha256:hash}});
     if(!object) throw new SigningError('簽署內容尚未保存，請重試',503);

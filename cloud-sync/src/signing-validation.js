@@ -78,7 +78,7 @@ export function validateSigningCreate(body) {
   const days=body.lifetimeDays??14;
   if(!Number.isInteger(days) || days<1 || days>30) invalid('連結期限');
   const snapshot=body.snapshot;
-  object(snapshot,['quotation','printScale','rendererVersion'],'快照');
+  object(snapshot,['quotation','printScale','rendererVersion','printDocument'],'快照');
   if(snapshot.rendererVersion!==1) invalid('版型版本');
   if(!Number.isInteger(snapshot.printScale) || snapshot.printScale<70 || snapshot.printScale>100) invalid('列印比例');
   const q=snapshot.quotation;
@@ -113,6 +113,17 @@ export function validateSigningCreate(body) {
   for(const key of signatureText) text(q.signature[key],200,'簽署資料');
   for(const key of ['clientSigImg','vendorSigImg']) png(q.signature[key],'簽名圖片');
   stamp(q.signature.clientStamp);stamp(q.signature.vendorStamp);png(q.logo,'Logo');
+  const document=snapshot.printDocument;
+  object(document,['html','css','viewportWidth'],'固定列印版型');
+  text(document.html,12*1024*1024,'列印內容');text(document.css,2*1024*1024,'列印樣式');
+  if(!Number.isInteger(document.viewportWidth) || document.viewportWidth<320 || document.viewportWidth>2560
+    || !document.html.includes('print-pagination-root') || !document.html.includes('data-signing-client-signature')
+    || /<(?:script|iframe|object|embed|base|meta|link|form|svg)\b|\son[a-z]+\s*=|\bsrcset\s*=/i.test(document.html)
+    || /<\/style/i.test(document.css)) invalid('固定列印版型');
+  for(const img of document.html.match(/<img\b[^>]*>/gi)||[]) {
+    const source=/\bsrc\s*=\s*["'](data:image\/png;base64,[A-Za-z0-9+/=]+)["']/i.exec(img);
+    if(!source) invalid('列印圖片');png(source[1],'列印圖片');
+  }
   return {snapshot,lifetimeDays:days};
 }
 
