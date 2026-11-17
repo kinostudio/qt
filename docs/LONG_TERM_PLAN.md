@@ -31,9 +31,9 @@
 1. [x] 核對本機基準及髒工作區；保留不相關修改。
 2. [x] GitHub CLI 活動帳號確為 `kinostudio`，`kinostudio/qt` 尚不存在。
 3. [x] Cloudflare OAuth 可用，帳號為既有 QT Worker 所在帳號；Pages 目前只有官網、review 等其他專案，不能覆寫。
-4. [ ] 確認獨立新儲存庫或轉移原庫的方式；確認兩個子網域的 DNS／可用性。
+4. [x] 使用者確認建立獨立 `kinostudio/qt`。新庫已建立、主線及12個回退標籤已推送；原 `aaronkino/qt` 保留。公開DNS查詢兩個新名稱最初皆為NXDOMAIN。已依使用者要求透過Cloudflare網頁只新增 `qt` CNAME → `kino-quotation-editor.pages.dev`（Proxy，自動TTL），DNS記錄由23筆增至24筆；`quote` 尚未新增。
 5. [x] 已建立 `scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`；僅 `index.html` 與 `assets/`，拒絕資產符號連結。`tests/build-editor.test.mjs` 核對白名單、PDF模組與前期功能標記；12項本機測試通過。尚未接入新站部署；簽署站另建獨立白名單。
-6. [ ] 建立獨立 Cloudflare Pages 專案，採 Git 整合自動部署；若授權或能力不允許，先確認替代部署方法，不誤建無法切換的專案類型。
+6. [x] 獨立 Git 整合專案 `kino-quotation-editor` 已建立，來源 `kinostudio/qt` main；建置命令 `node scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`。首次部署 `9a2b4409-01e7-41d3-9aa2-f552777cb436` 顯示deploy/success，預覽為 `https://kino-quotation-editor.pages.dev`。舊GitHub Pages workflow僅允許原 `aaronkino/qt` 執行，避免新庫誤啟動GitHub Pages。尚需驗證後續push自動建置及自訂網域HTTPS。
 7. [ ] 新站使用既有 Google Client ID，新增來源與需要的 redirect URI；OneDrive 新增 SPA redirect URI `https://qt.kinostudio.tw/`。保留舊網址設定直到驗收完成，不重建帳號／工作區。
 8. [ ] CORS 新增編輯台來源；PDF 字型與允許載入來源改新站，先驗證新站字型可用，再部署依賴它的 Worker。
 9. [ ] 以假資料回歸：桌面與手機、登入恢復、差異／刪除衝突、OneDrive、列印70/85/100、快速／詳細 PDF、中文填寫存檔、印章跨格與頁碼。
@@ -66,8 +66,9 @@
 
 ## 目前下一步
 
-- 已確認建立獨立 `kinostudio/qt`；保留原庫直到驗收與備份完成。正在建立新庫與獨立 Pages Git 整合。
-- 核對 DNS／Pages GitHub 授權範圍，建立公開白名單建置及本機備份／匯入規格。
+- 新庫與Git整合建置已建立。Cloudflare OAuth有Pages權限但無DNS記錄API權限；DNS由使用者授權的網頁操作完成，不擴大API金鑰權限。
+- `qt.kinostudio.tw` 自訂網域目前為pending，HTTPS最近一次回應522；不是已完成驗收。後續續作先核對該domain資源狀態與HTTPS，再更新字型依賴。不要反覆建立新部署或重建網域。
+- 仍需新增Google來源與Microsoft SPA redirect設定，完成驗收；完整本機備份／還原功能與實際備份尚未完成。不得私人化或關閉原站。
 - 每個工作批次更新此檔案，紀錄實際證據，區分 `passed`／`failed`／`not_checked`。不能因為程式寫完就勾選正式驗收完成。
 
 ## 自動續作
