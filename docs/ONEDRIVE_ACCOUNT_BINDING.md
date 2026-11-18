@@ -1,6 +1,6 @@
 # Google 帳號綁定 OneDrive
 
-狀態：隔離 release 已完成移植及本機驗證，基底 kinostudio/main dd9a9c1，分支 codex/onedrive-google-binding-release。尚未正式上線，正式環境預設不啟用。既有 Google／D1／R2 同步及獨立 Microsoft SPA 登入保持不變。
+狀態：正式服務已啟用，待首次真實帳號綁定及隔離 OneDrive 存檔驗收。沿用獨立 release 與現有資源，只新增綁定資料表；既有 Google／D1／R2 業務資料未改寫。可關閉旗標回到原 Microsoft SPA 路徑，不刪新表或憑證。
 
 ## 目標與範圍
 
@@ -86,4 +86,15 @@ Google 仍只驗證 QT 使用者，不直接授予 Microsoft 權限。新增功�
 - 已先部署相容 Worker `ebf464c1-d3f3-4d68-9a45-ee6afa8a6a83`，再推送前端；Pages production `18aca283-4217-4ace-8060-02f4ddbcb160` 的 source 為 c9c99d6。正式 health=true、oneDriveBindingEnabled=false、oneDriveLoginEnabled=true；原登入流程保持可用，新綁定未啟用，正式 migration 未套用，也未寫既有 D1／R2／OneDrive 資料。
 - 正式主頁與專用回呼頁皆200且含新程式。獨立無登入瀏覽器 smoke 通過：編輯台可渲染、舊 OneDrive 登入設定可開啟，應用 API 零非 GET／HEAD／OPTIONS 請求。Cloudflare 自動附加 Web Analytics 標記，不宣稱公開 HTML 與原檔逐位元組相同。
 - 使用者後續要求代理設定 Microsoft；已核對沒有可用的 Entra 管理連線／Azure CLI／Graph 管理 SDK，Windows computer-use 技能禁止代改安全設定，Edge 擷取也持續失敗，已停止重試。不擅自索取全應用程式管理權限或新增外部雲端瀏覽器服務。
-- 已由代理建立 ONEDRIVE_TOKEN_KEY，尚無 Microsoft 用戶端密碼。正式 Web callback／MICROSOFT_CLIENT_SECRET 仍需使用者完成，或提供適合且已授權的 Entra 管理介面，之後才安排 OAuth／Graph／長期續期與實機驗收。使用者同意不是設定成功的證據；不宣稱綁定已可用，也不重複請求相同許可。
+- 當時已由代理建立 ONEDRIVE_TOKEN_KEY，Microsoft 設定仍待完成；後續啟用紀錄見下一節。使用者同意不是設定成功的證據，不以同意取代驗收。
+
+## 啟用與資料保全（2026-11-18）
+
+- 使用者貼出的回呼清單包含正確 Web URI 並保留三個 SPA URI，之後回覆 Secret 已設定、明確要求啟用。已唯讀核對 MICROSOFT_CLIENT_SECRET 與 ONEDRIVE_TOKEN_KEY 均為 secret_text，不讀取其值。
+- 先匯出 D1 到儲存庫外 `C:/Users/Aaron/Documents/Codex/QT Private Backups/d1-before-onedrive-enable-20261118.sql`，985420 bytes，SHA-256 `b9da7f8d4ecac7e69bd6ac60a5143fc3747e8be5ca0e66964d4bd3a97148db74`；以記憶體 SQLite 實際載入成功。備份含私人資料，禁止加入 Git。
+- 重新通過39項單元測試；核對正式待執行 migration 僅0010，再套用新增兩個綁定表。未套用簽署／額度 migration，未 ALTER／UPDATE／DELETE 舊業務資料。
+- 新表建立後另存 `d1-after-onedrive-migration-20261118.sql`，比較11類舊業務表完整資料的排序雜湊，全部一致：雲端3專案、1範本、7分類、29條款、1印章及其版本、工作區狀態與6份歷史版本／235筆歷史記錄均未變，新兩表均為空。legacy projects／contract_templates 原本也為空。
+- 部署啟用 Worker `6572db71-5fb3-48a5-84e9-c879d195a412`；正式 config 回傳 oneDriveBindingEnabled=true、googleLoginEnabled=true、oneDriveLoginEnabled=true。啟用後唯讀核對 bindings=0、attempts=0，沒有自動產生綁定或上傳草稿；R2／OneDrive 沒有測試寫入。
+- 已請使用者重新整理新站，登入管理報價的 Google 帳號，差異面板只關閉、不合併／載入，再完成 Microsoft 綁定；先不選既有專案資料夾、不儲存。需要使用者完成真實登入，不能建立假的正式 Google 工作階段代替驗收。
+- 正式站另以全新390×844手機瀏覽器檢查：展開導覽列後開啟 OneDrive，顯示先登入 Google 的提示，應用 API 零寫入。最後一次唯讀狀態為 bindings=0、live_attempts=0、reconnect_required=0，首次真實授權仍未開始／完成。
+- 真實 Microsoft 權杖交換、獨立測試資料夾及 JSON 存檔、重新登入恢復綁定／長期續期尚待驗證。正式服務啟用不等於完整帳號驗收通過；後續測試只使用專用測試目錄及非業務報價。
