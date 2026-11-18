@@ -5602,7 +5602,7 @@
                             <div className="qt-toolbar-panel-inner">
                                 <div className="space-y-2 border-t border-gray-100 px-3 py-3">
                                     <QuotationTypeSelector data={data} setData={setData} />
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                         <CloudAccountControls onSync={syncCloudData} onManage={openCloudAuth} onDataManager={openDataManager} status={cloudSyncStatus} authUser={cloudAuthUser} onOneDrive={openOneDrive} onSaveOneDrive={saveOneDrive} account={oneDriveAccount} folder={oneDriveFolder} autoSave={oneDriveAutoSave} driveStatus={oneDriveStatus} needsReconnect={oneDriveNeedsReconnect} bindingMode={oneDriveBindingEnabled} compact={true} />
                                         <PrintSplitButton value={printScale} onChange={onPrintScaleChange} onPrint={handlePrint} fullWidth={true} />
                                     </div>

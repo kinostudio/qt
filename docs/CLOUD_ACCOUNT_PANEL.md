@@ -22,3 +22,9 @@
 僅前端與文件／測試變更，Worker、Secret、SQL、資料表與儲存鍵皆不變。不查閱或改寫現有使用者資料，不開啟自動存檔、不變更現有目錄。透過既有 kinostudio/qt main → kino-quotation-editor Git 整合部署，與官網無關。
 
 尚未驗收：實體手機觸控及真實 OneDrive 隔離檔案寫入。模擬驗收不能取代真實帳號的存檔驗收。
+
+## 正式發布
+
+- `32f89d2` 已推送 main／獨立發布分支，公開 qt.kinostudio.tw 回傳200且包含新面板。
+- tests/cloud-account-live.cjs 在正式網頁以全新未登入 Edge 分別測試390／1366px：展開導覽列、開啟面板、Google登入與OneDrive連接入口、版面邊界與Escape關閉皆通過，零應用寫入／零頁面錯誤。沒有讀取使用者登入設定檔。
+- 補充手機窄螢幕入口採整列，避免長狀態標籤擠壓列印；新面板兩種尺寸隔離驗收再次通過。
