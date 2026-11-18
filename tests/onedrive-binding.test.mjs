@@ -34,7 +34,7 @@ function fixture(t) {
   let override;
   const fetchFn = async (url, options) => {
     calls.push({url: String(url), options});
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert.ok(options.signal instanceof AbortSignal);
     if (override) {const result = await override(String(url), options); if (result) return result;}
     if (String(url).includes('/token')) return json({access_token: 'access-test-secret', refresh_token: 'refresh-test-secret'});
@@ -346,6 +346,15 @@ test('bounded streamed request and external responses, generic provider failures
   await rejects(f.call('/folders'),502);
   f.setFetch(()=>{throw new Error('sensitive-secret-provider-error');});
   await assert.rejects(f.call('/folders'),error=>error.status===502&&!error.message.includes('sensitive'));
+});
+
+test('provider redirects are rejected before parsing or forwarding credentials', async t => {
+  const f=fixture(t);
+  f.setFetch(()=>new Response(null,{status:302,headers:{location:'https://attacker.invalid/'}}));
+  const {state}=await f.begin();
+  await rejects(f.call('/complete','POST',{state,code:'test-code',verifier}),502,'ONEDRIVE_REDIRECT_REJECTED');
+  assert.equal(f.calls.length,1);
+  assert.equal(f.row(),undefined);
 });
 
 test('migration adds only new independent tables, preserves existing schema and project rows', async t => {

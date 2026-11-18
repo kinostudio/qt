@@ -82,7 +82,11 @@ async function external(fetchFn, url, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
   try {
-    const result = await fetchFn(url, {...options, redirect: 'error', signal: controller.signal});
+    const result = await fetchFn(url, {...options, redirect: 'manual', signal: controller.signal});
+    if (result.status >= 300 && result.status < 400) {
+      await result.body?.cancel();
+      fail('OneDrive 回應非預期的重新導向，已停止連線以保護授權資料', 502, 'ONEDRIVE_REDIRECT_REJECTED');
+    }
     const data = await readJson(result, true);
     return {status: result.status, ok: result.ok, data};
   } catch (error) {

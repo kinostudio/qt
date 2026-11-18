@@ -98,3 +98,12 @@ Google 仍只驗證 QT 使用者，不直接授予 Microsoft 權限。新增功�
 - 已請使用者重新整理新站，登入管理報價的 Google 帳號，差異面板只關閉、不合併／載入，再完成 Microsoft 綁定；先不選既有專案資料夾、不儲存。需要使用者完成真實登入，不能建立假的正式 Google 工作階段代替驗收。
 - 正式站另以全新390×844手機瀏覽器檢查：展開導覽列後開啟 OneDrive，顯示先登入 Google 的提示，應用 API 零寫入。最後一次唯讀狀態為 bindings=0、live_attempts=0、reconnect_required=0，首次真實授權仍未開始／完成。
 - 真實 Microsoft 權杖交換、獨立測試資料夾及 JSON 存檔、重新登入恢復綁定／長期續期尚待驗證。正式服務啟用不等於完整帳號驗收通過；後續測試只使用專用測試目錄及非業務報價。
+
+## 首次授權連線錯誤修復（2026-11-18）
+
+- 使用者回報「無法連線至 OneDrive 或連線逾時」。唯讀查詢為 bindings=0、consumed attempts=1、cloud_projects=3、cloud_clauses=29：回呼已執行但尚未保存綁定，不刪除或重置授權嘗試。
+- 共用 external() 原用 redirect:error，Workers 不支援此模式，會在出站前拋出 TypeError。改用 manual 並明確拒絕所有3xx、取消回應串流，不跟隨轉址或把 OAuth 憑證送往其他來源。參考 https://developers.cloudflare.com/workers/runtime-apis/request/ 。
+- 新增 tests/onedrive-fetch-runtime.cjs：真正 workerd fetch／Request + 臨時 D1 + 封閉出站替身，驗證成功交換、Graph 查詢、refresh、token／Graph 轉址拒絕及失敗改綁保留舊 revision。第一次測試替身誤用 request.url()，改為標準 request.url 屬性後通過；不將該測試程式部署到正式環境。
+- 40/40單元測試、手機真實 handler／SQLite E2E、OneDrive UI、既有 workerd／D1 測試與 Worker dry-run 通過。Microsoft 回應仍為替身，不是假稱真實帳號驗收。
+- 只部署 Worker 程式修正，版本 f30175e5-0541-49af-a3a7-89d4536eaee5；health=true，Google／OneDrive 登入及 binding 旗標皆 true。沒有遷移、資料清除、Secret／金鑰輪替或 R2／OneDrive 檔案寫入。
+- 下一步：使用者重新整理編輯台，重新開始 Microsoft 連接；舊 state／code 已一次性消耗，單按重新讀取連線不會重做權杖交換。不需重建 Microsoft 回呼或密碼。真實綁定及隔離資料夾存檔仍待使用者完成登入後驗收。
