@@ -74,13 +74,16 @@ Google 仍只驗證 QT 使用者，不直接授予 Microsoft 權限。新增功�
 - 已請求使用者一次：在 Entra 的 KINO Quotation OneDrive（Client ID `1716f4a3-f086-4c1b-b6e0-43ae9561b340`）新增 Web 回呼 `https://qt.kinostudio.tw/onedrive-link.html`，保留原 SPA；建立描述 `KINO QT OneDrive Backend` 的用戶端密碼（建議6個月並記錄到期日），把其 **值** 直接存到 QT Worker 的 **Secret** `MICROSOFT_CLIENT_SECRET`，不要貼到對話、不要誤填秘密識別碼、不要放進一般文字變數。
 - 等待使用者回覆「已設定」；期間不重複建立金鑰、不反覆嘗試安全設定。尚未啟用 `ONEDRIVE_BINDING_ENABLED`、套用正式 migration、變更 D1／R2／OneDrive 資料或執行真實授權／存檔驗收。
 
-## 隔離 release 交接（2026-11-18）
+## 隔離 release 發布紀錄（2026-11-18）
 
-- 路徑：`C:/Users/Aaron/Documents/Codex/KINO Quota Release`；HEAD 仍為 `dd9a9c1`，沒有 commit／push。原工作區僅讀取，未修改。
+- 路徑：`C:/Users/Aaron/Documents/Codex/KINO Quota Release`；移植基準 `dd9a9c1`，受測程式提交 `c9c99d6` 已推送 main 與 `codex/onedrive-google-binding-release`。移植時未修改原工作區程式，保留原開發分支的未提交修改。
 - `cloud-sync/wrangler.jsonc` 僅增加公開 `ONEDRIVE_REDIRECT_URI` 與字串 `ONEDRIVE_BINDING_ENABLED: "false"`；原有 qt／GitHub Pages／localhost origins、D1／R2、PDF 設定保留。沒有 Secret 值或新依賴。
 - 兩項既有 SPA UX 修正：尚未選位置時「立即儲存」開啟資料夾選擇；勾選自建子資料夾時以既選資料夾作上級目錄，之後切換不把已建子資料夾誤當上級。
 - 上述 39 項 unit、OneDrive UI、手機真實 handler E2E、既有手機 mock、真正 workerd／暫存 D1 全部通過。`wrangler deploy --dry-run` 亦通過（924.51 KiB／gzip 173.00 KiB）；只產生本機 bundle，不部署。
 - 建置公開根目錄僅 `assets`、`index.html`、`onedrive-link.html`；既有 local-backup／builder 測試沒有未發布 signing 資產。所有 style 區塊、PDF renderer、印章測試、local-backup 資產與測試、package／lock 與 dd9a9c1 相同，沒有 0008／0009。
 - 依賴重用：忽略的 `cloud-sync/node_modules` junction 指向原工作區已安裝依賴；瀏覽器測試設 `NODE_PATH=C:/Users/Aaron/Documents/Codex/KINO Quota/node_modules;C:/Users/Aaron/Documents/Codex/KINO Quota/cloud-sync/node_modules`。未執行安裝。workerd 測試讀 release 的 `tmp/onedrive-worker-bundle/index.js`；Wrangler 的 `--outdir` 要給此絕對路徑，避免解析到 cloud-sync/tmp。
 - 過程失敗已排除：手工 esbuild 先被沙箱上層目錄讀取限制阻擋，之後缺少 Workers 對 tty／util 的相容解析；改用已安裝 Wrangler 官方 dry-run。第一次 dry-run 相對輸出落在 cloud-sync/tmp，造成 runtime ENOENT；改絕對路徑後 runtime 通過。一般 diff --check 把 CRLF 視作尾端空白；`git -c core.whitespace=cr-at-eol diff --check` 通過，無實質尾端空白問題。
-- 仍需父工作決定 commit／部署；即使先發布關閉的程式，也不可啟用旗標或套 migration 作為本批的一部分。正式 Web callback／MICROSOFT_CLIENT_SECRET 待使用者完成，之後仍需 OAuth／Graph／長期續期與實機驗收。沒有宣稱正式授權已可用。
+- 已先部署相容 Worker `ebf464c1-d3f3-4d68-9a45-ee6afa8a6a83`，再推送前端；Pages production `18aca283-4217-4ace-8060-02f4ddbcb160` 的 source 為 c9c99d6。正式 health=true、oneDriveBindingEnabled=false、oneDriveLoginEnabled=true；原登入流程保持可用，新綁定未啟用，正式 migration 未套用，也未寫既有 D1／R2／OneDrive 資料。
+- 正式主頁與專用回呼頁皆200且含新程式。獨立無登入瀏覽器 smoke 通過：編輯台可渲染、舊 OneDrive 登入設定可開啟，應用 API 零非 GET／HEAD／OPTIONS 請求。Cloudflare 自動附加 Web Analytics 標記，不宣稱公開 HTML 與原檔逐位元組相同。
+- 使用者後續要求代理設定 Microsoft；已核對沒有可用的 Entra 管理連線／Azure CLI／Graph 管理 SDK，Windows computer-use 技能禁止代改安全設定，Edge 擷取也持續失敗，已停止重試。不擅自索取全應用程式管理權限或新增外部雲端瀏覽器服務。
+- 已由代理建立 ONEDRIVE_TOKEN_KEY，尚無 Microsoft 用戶端密碼。正式 Web callback／MICROSOFT_CLIENT_SECRET 仍需使用者完成，或提供適合且已授權的 Entra 管理介面，之後才安排 OAuth／Graph／長期續期與實機驗收。使用者同意不是設定成功的證據；不宣稱綁定已可用，也不重複請求相同許可。
