@@ -41,3 +41,5 @@ Wrangler pages project create在此版本非預期委派為Worker部署，曾新
 - 89項單元再次通過。正式GET／OPTIONS隔離檢查：quote來源對/api/sync、/api/stamps、/api/onedrive、管理者/api/signing皆403；專用guest預檢204，不存在的測試連結404，未登入管理者401。
 - 唯讀D1：projects=3、clauses=29、bindings=1、signing_requests=0、budget_rows=0，rows_written=0。這證明啟用及上述負向測試沒有建立簽署或Browser Run工作，不代表既有資料逐位元組再次比對。
 - 待真實Google白名單帳號的非業務報價簽署／正式Browser Run完整驗收；不得偽造工作階段或使用既有真實客戶合約做測試。真實簽署驗收完成前不可把「已啟用」稱為「全流程已驗收」。
+- 程式提交163e1b4已先核對遠端main為祖先，再atomic push主線與簽署分支；qt正式HTML含openSigningManager及新版CloudAccountControls。390／1366px全新未登入Edge實測：展開工具列、客戶簽署入口、轉Google登入提示、quote根頁不完整連結及不存在權杖拒絕均通過，零應用寫入、零頁面錯誤。初次測試exact按鈕名稱受Font Awesome字型影響未定位到，核對真實按鈕後改用文字正則，未修改正式功能來配合測試。
+- 已一次請使用者在編輯台以kinostudio.tw@gmail.com登入（已登入免重登）、關閉而非合併同步差異，再開客戶簽署；不要從真實報價建立連結。等待正式登入操作時，不提取Token、不建立假Google工作階段、不擅自替換本機草稿。
