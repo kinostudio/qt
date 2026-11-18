@@ -32,3 +32,12 @@ Wrangler pages project create在此版本非預期委派為Worker部署，曾新
 - 一般PDF與簽署共用8分鐘保守應用預算；不是帳戶實際帳單用量，也不能保證其他產品永不收費。沿用已確認的Workers Free，不升級。
 
 程式部署與資料表就緒不等於客戶簽署正式驗收。舊aaronkino/qt已依使用者指示私人化，新kinostudio/qt仍公開；本次不再變更可見性。
+
+## DNS完成後啟用（2026-11-19）
+
+- quote CNAME已出現在專用DNS頁（25筆記錄），指向kino-quotation-signing.pages.dev。HTTPS200且保留no-store／no-referrer／noindex／CSP；官方Pages API回讀網域active。先前DNS阻礙已解除，不再要求新增同一記錄。
+- Wrangler既有OAuth存取權杖過期造成直接API401，使用官方CLI正常續期後domain查詢200。subscriptions API仍403，未擴大權限；改以已登入Cloudflare的Workers方案頁唯讀核對「免費 US$0 目前方案」，Paid仍顯示升級，未點擊任何計費變更。
+- 原Worker部署ff6d9b7a-6064-4855-b28d-2ccfda2782bd，兩簽署旗標true，管理者白名單與既有Secret／OneDrive／Google／D1／R2保留。沒有再次套用migration或建立金鑰。
+- 89項單元再次通過。正式GET／OPTIONS隔離檢查：quote來源對/api/sync、/api/stamps、/api/onedrive、管理者/api/signing皆403；專用guest預檢204，不存在的測試連結404，未登入管理者401。
+- 唯讀D1：projects=3、clauses=29、bindings=1、signing_requests=0、budget_rows=0，rows_written=0。這證明啟用及上述負向測試沒有建立簽署或Browser Run工作，不代表既有資料逐位元組再次比對。
+- 待真實Google白名單帳號的非業務報價簽署／正式Browser Run完整驗收；不得偽造工作階段或使用既有真實客戶合約做測試。真實簽署驗收完成前不可把「已啟用」稱為「全流程已驗收」。

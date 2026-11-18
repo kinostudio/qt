@@ -162,4 +162,9 @@
 
 ## 自動續作
 
+### 2026-11-19 簽署DNS完成及後端啟用
+
+- 最新權威狀態見docs/SIGNING_RELEASE.md。quote域名已active、HTTPS200，Workers方案頁唯讀確認Free為目前方案。原API部署ff6d9b7a-6064-4855-b28d-2ccfda2782bd，兩簽署旗標true；原Google／OneDrive與資料保留。
+- 89單元與正式未登入／客戶來源隔離檢查通過，沒有正式簽署或Browser Run工作；真實Google帳號及非業務報價正式產檔驗收仍待進行。不要沿用舊DNS未設定或旗標false紀錄。
+
 已建立本對話 active goal；沿用並更新此對話既有 heartbeat `automation-6`，每小時續作一個安全工作批次。需本機 Codex 能執行；不代表離線雲端常駐服務。需使用者授權的步驟記錄並請求，不擅自繞過。

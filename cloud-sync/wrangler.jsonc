@@ -10,8 +10,8 @@
     "enabled": true
   },
   "vars": {
-    "SIGNING_ENABLED": "false",
-    "SIGNING_SUBMIT_ENABLED": "false",
+    "SIGNING_ENABLED": "true",
+    "SIGNING_SUBMIT_ENABLED": "true",
     "SIGNING_ALLOWED_EMAILS": "kinostudio.tw@gmail.com",
     "ONEDRIVE_REDIRECT_URI": "https://qt.kinostudio.tw/onedrive-link.html",
     "ONEDRIVE_BINDING_ENABLED": "true",
