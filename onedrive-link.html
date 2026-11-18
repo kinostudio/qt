@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>OneDrive 綁定</title>
+<p id="message" role="status">正在返回 KINO QT…</p>
+<script>
+(() => {
+    const key = 'kino_quotation_onedrive_link_v1';
+    const query = new URLSearchParams(location.search);
+    // Remove the authorization code even when the handoff is rejected.
+    history.replaceState(null, '', location.pathname);
+    try {
+        const pending = JSON.parse(sessionStorage.getItem(key) || 'null');
+        const states = query.getAll('state'), codes = query.getAll('code');
+        if (!pending?.state || !pending.verifier || !pending.userId || states.length !== 1 || states[0] !== pending.state) {
+            throw new Error('invalid state');
+        }
+        if (query.has('error')) {
+            sessionStorage.setItem(key, JSON.stringify({...pending, error:true}));
+        } else {
+            if (codes.length !== 1 || !codes[0]) throw new Error('missing code');
+            sessionStorage.setItem(key, JSON.stringify({...pending, code:codes[0]}));
+        }
+        location.replace('/');
+    } catch {
+        sessionStorage.removeItem(key);
+        document.getElementById('message').textContent = 'OneDrive 綁定驗證失敗，請返回首頁重新操作。';
+        const link = document.createElement('a');
+        link.href = '/';
+        link.textContent = '返回首頁';
+        document.body.appendChild(link);
+    }
+})();
+</script>
+</html>

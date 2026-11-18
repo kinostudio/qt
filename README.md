@@ -106,6 +106,10 @@ Cloudflare D1 是目前的工作資料庫與跨裝置同步來源。建議將登
 
 OneDrive 登入使用官方 `@azure/msal-browser` 5.17.3 瀏覽器套件；登入快取只存在目前瀏覽器工作階段的 `sessionStorage`。本機只記錄選定的資料夾識別資訊與自動儲存偏好，不保存 Microsoft 密碼或存取權杖。Microsoft Entra 應用程式需將正式網站及本機測試網址登錄為 SPA 重新導向 URI，Application (client) ID 由 Worker 的公開設定 API 提供。
 
+開發中的 Google 帳號綁定 OneDrive 模式由 `ONEDRIVE_BINDING_ENABLED` 控制，正式環境預設不啟用；啟用後改由 Worker 加密保存 Microsoft 更新權杖與帳號對應目錄，前端不接收 Microsoft 權杖。登入／恢復綁定不會自動上傳草稿，自動儲存需在本次連線明確啟用；解除綁定不刪 OneDrive 檔案。既有 SPA 模式保留作相容路徑。
+
+綁定可長期保存，但更新權杖與應用程式憑證各有期限，不能保證永久免重新授權；正式 Web 回呼、Secret、資料表、測試與部署順序見 [OneDrive 帳號綁定計畫](docs/ONEDRIVE_ACCOUNT_BINDING.md)。不要直接套用所有待執行 migration，以免連同尚未驗收的其他功能上線。
+
 ## 資料安全
 
 未啟用雲端同步時，報價資料不會離開瀏覽器。啟用同步後，已儲存專案及條款資料庫會傳送至專用 D1；API 僅允許本網站與明列的本機測試來源，並要求有效的 Google 工作階段。GitHub 公開程式庫不包含 Google Client Secret、Cloudflare API Token、D1 存取憑證或使用者資料。請勿將帳密或其他無關敏感資訊寫入報價內容。

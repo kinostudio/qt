@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
   const context = await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
-  const errors = [], uploads = [], calls = [];
+  const errors = [], uploads = [], calls = [], folderCreates = [];
   const pdfOutputs=[];
   let activeUploads=0, maxActive=0;
   page.on('pageerror', e => {errors.push(e.message); console.error(e.message);});
@@ -60,6 +60,11 @@ const assert = require('node:assert/strict');
       return route.fulfill({status:200,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(data)});
     }
     if (url.includes('graph.microsoft.com')) {
+      if (request.method()==='GET' && url.includes('/items/test-folder:/')) return route.fulfill({status:404,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:'{"error":{"message":"Not found"}}'});
+      if (request.method()==='POST' && url.endsWith('/items/test-folder/children')) {
+        const data=JSON.parse(request.postData());folderCreates.push(data);
+        return route.fulfill({status:201,contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify({id:'created-project-folder',name:data.name,folder:{}})});
+      }
       if (request.method()==='OPTIONS') return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'PUT,GET,OPTIONS','access-control-allow-headers':'*'}});
       if(request.method()==='PUT') {
         activeUploads++; maxActive=Math.max(maxActive,activeUploads);
@@ -151,6 +156,21 @@ const assert = require('node:assert/strict');
   for(let i=0;i<50 && uploads.length<3;i++) await page.waitForTimeout(100);
   assert.equal(uploads.length,3,'手動 OneDrive 存檔未送出');
   assert.equal(JSON.parse(uploads[2].body).header.validity,'模擬較新內容');
+  await page.getByRole('checkbox',{name:/依報價單號自動建立專案資料夾/}).check();
+  assert.ok(await page.getByText('測試目錄',{exact:true}).isVisible());
+  assert.ok(await page.getByRole('button',{name:'立即儲存到 OneDrive'}).isEnabled(),'已選資料夾應直接成為上級目錄');
+  await page.getByRole('button',{name:'立即儲存到 OneDrive'}).click();
+  for(let i=0;i<50 && uploads.length<4;i++) await page.waitForTimeout(100);
+  assert.equal(uploads.length,4);
+  assert.match(uploads[3].url,/items\/created-project-folder:/);
+  assert.equal(folderCreates.length,1);
+  assert.equal(folderCreates[0]['@microsoft.graph.conflictBehavior'],'fail');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('kino_quotation_onedrive_parent_folder_v1')).id),'test-folder');
+  await page.getByRole('checkbox',{name:/依報價單號自動建立專案資料夾/}).uncheck();
+  await page.setViewportSize({width:1366,height:1000});
+  await page.getByRole('checkbox',{name:/依報價單號自動建立專案資料夾/}).check();
+  assert.ok(await page.getByText('測試目錄',{exact:true}).isVisible(),'再次切換不可把已建立子資料夾當成上級目錄');
+  await page.setViewportSize({width:390,height:844});
   assert.deepEqual(errors,[]);
   await page.getByRole('button',{name:'關閉 OneDrive 設定'}).click();
   await page.getByRole('button',{name:'資料庫管理',exact:true}).click();

@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readPdfPayload, renderPrintPdf, PRINT_FONT_URL } from './pdf-render.js';
 import { guardSql } from './sync-guard.js';
+import { handleOneDriveBinding, isOneDriveBindingEnabled, OneDriveBindingError } from './onedrive-binding.js';
 import { Buffer } from 'node:buffer';
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -871,6 +872,7 @@ const routeRequest = async (request, env) => {
       googleLoginEnabled: Boolean(env.GOOGLE_CLIENT_ID),
       microsoftClientId: env.MICROSOFT_CLIENT_ID || "",
       oneDriveLoginEnabled: Boolean(env.MICROSOFT_CLIENT_ID),
+      oneDriveBindingEnabled: isOneDriveBindingEnabled(env),
     });
   }
   if (request.method === "POST" && url.pathname === "/api/auth/google") {
@@ -899,6 +901,7 @@ const routeRequest = async (request, env) => {
   }
 
   const workspaceId = auth.workspaceId;
+  if (url.pathname === '/api/onedrive' || url.pathname.startsWith('/api/onedrive/')) return handleOneDriveBinding(request, env, auth);
   if (request.method === 'POST' && url.pathname === '/api/pdf') {
     const allowedEmails = String(env.PDF_ALLOWED_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (!allowedEmails.includes(String(auth.user.email || '').toLowerCase())) throw new ApiError('此帳號尚未開通 PDF 下載。', 403);
@@ -1315,15 +1318,18 @@ export default {
       return securedResponse;
     } catch (error) {
       const status =
-        error instanceof ApiError ? error.status : 500;
-      if (!(error instanceof ApiError)) console.error(error);
+        error instanceof ApiError || error instanceof OneDriveBindingError ? error.status : 500;
+      if (!(error instanceof ApiError) && !(error instanceof OneDriveBindingError)) {
+        if (new URL(request.url).pathname.startsWith('/api/onedrive')) console.error('ONEDRIVE_API_FAILED', error?.name || 'Error');
+        else console.error(error);
+      }
       const message =
         error?.message === "PAYLOAD_TOO_LARGE"
           ? "同步資料超過大小上限"
-          : error instanceof ApiError
+          : error instanceof ApiError || error instanceof OneDriveBindingError
             ? error.message
             : "伺服器處理失敗";
-      return json({ error: message }, status, corsHeaders);
+      return json({ error: message, ...(error instanceof OneDriveBindingError && error.code ? {code:error.code} : {}) }, status, {...corsHeaders,'cache-control':'no-store','x-content-type-options':'nosniff'});
     }
   },
 };

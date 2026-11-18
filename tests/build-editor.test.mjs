@@ -5,7 +5,8 @@ import {execFileSync} from 'node:child_process';
 
 test('editor build contains current UI and only the public allowlist',async()=>{
   execFileSync(process.execPath,['scripts/build-editor.mjs']);
-  assert.deepEqual((await fs.readdir('tmp/qt-editor-site')).sort(),['assets','index.html']);
+  assert.deepEqual((await fs.readdir('tmp/qt-editor-site')).sort(),['assets','index.html','onedrive-link.html']);
+  assert.equal(await fs.readFile('tmp/qt-editor-site/onedrive-link.html','utf8'),await fs.readFile('onedrive-link.html','utf8'));
   assert.equal(await fs.readFile('tmp/qt-editor-site/index.html','utf8'),await fs.readFile('index.html','utf8'));
   assert.equal(await fs.readFile('tmp/qt-editor-site/assets/pdf-form.js','utf8'),await fs.readFile('assets/pdf-form.js','utf8'));
   assert.equal(await fs.readFile('tmp/qt-editor-site/assets/local-backup.js','utf8'),await fs.readFile('assets/local-backup.js','utf8'));

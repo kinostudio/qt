@@ -15,6 +15,7 @@ try {
 } catch(error) {if(error.code!=='ENOENT') throw error;}
 await fs.mkdir(output);
 await fs.copyFile(path.join(root,'index.html'),path.join(output,'index.html'));
+await fs.copyFile(path.join(root,'onedrive-link.html'),path.join(output,'onedrive-link.html'));
 async function copyAssets(source,target) {
   await fs.mkdir(target,{recursive:true});
   for(const entry of await fs.readdir(source,{withFileTypes:true})) {

@@ -1684,7 +1684,7 @@
             folders, folderStack, folderLoading, folderError,
             onLogin, onLogout, onBrowse, onOpenFolder, onGoToBreadcrumb,
             onSelectFolder, onSelectParentFolder, onToggleAutoCreateProjectFolder,
-            onToggleAutoSave, onSaveNow
+            onToggleAutoSave, onSaveNow, bindingMode = false, googleReady = false, needsReconnect = false, onRefreshBinding
         }) => {
             const [browseMode, setBrowseMode] = useState(false);
             const openBrowser = async () => {
@@ -1703,13 +1703,19 @@
                             <button type="button" onClick={onClose} className="delete-action shrink-0" aria-label="關閉 OneDrive 設定"><i className="fas fa-times"></i></button>
                         </div>
                         <div className="overflow-y-auto p-5">
-                            {!clientId ? (
+                            {bindingMode && googleReady && folderError && <div className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800" role="alert">
+                                <p>{folderError}</p>
+                                <button type="button" disabled={folderLoading} onClick={onRefreshBinding} className="mt-2 rounded-lg border border-amber-300 px-3 py-2 font-bold disabled:opacity-40">重新讀取連線</button>
+                            </div>}
+                            {bindingMode && !googleReady ? (
+                                <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">請先使用 Google 登入，再綁定 OneDrive。</p>
+                            ) : !clientId ? (
                                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-800">
                                     <i className="fas fa-circle-info mr-1"></i>Microsoft Entra 應用程式尚未完成設定；程式已就緒，填入專用 Client ID 後即可登入。
                                 </div>
-                            ) : !account ? (
+                            ) : !account || needsReconnect ? (
                                 <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                                    <p className="text-sm font-bold text-gray-800">使用 Microsoft 帳號連接 OneDrive</p>
+                                    <p className="text-sm font-bold text-gray-800">{needsReconnect ? 'OneDrive 授權已失效，請重新連接' : '使用 Microsoft 帳號連接 OneDrive'}</p>
                                     <p className="mt-1 text-xs leading-relaxed text-gray-500">只要求讀寫你本人 OneDrive 檔案所需的 Files.ReadWrite 權限，不會取得密碼。</p>
                                     <button type="button" disabled={status === 'signingIn'} onClick={onLogin} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#2f2f2f] px-4 py-3 text-sm font-bold text-white disabled:opacity-50">
                                         <i className="fa-brands fa-microsoft"></i>{status === 'signingIn' ? '正在前往 Microsoft…' : '登入 Microsoft／OneDrive'}
@@ -1727,7 +1733,7 @@
                                     </div>
                                     <div className="min-h-[12rem] rounded-2xl border border-gray-200 bg-gray-50 p-2">
                                         {folderLoading ? <div className="flex h-40 items-center justify-center text-sm text-gray-400"><i className="fas fa-spinner fa-spin mr-2"></i>讀取資料夾…</div>
-                                            : folderError ? <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{folderError}</div>
+                                            : folderError && !bindingMode ? <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{folderError}</div>
                                             : folders.length ? <div className="space-y-1">{folders.map(item => (
                                                 <button key={item.id} type="button" onClick={() => onOpenFolder(item)} className="flex w-full items-center gap-3 rounded-xl bg-white px-3 py-3 text-left text-sm font-bold text-gray-700 shadow-sm transition hover:bg-blue-50 hover:text-kino">
                                                     <i className="fas fa-folder text-amber-400"></i><span className="min-w-0 flex-1 truncate">{item.name}</span><i className="fas fa-chevron-right text-xs text-gray-300"></i>
@@ -1737,10 +1743,9 @@
                                     </div>
                                     <div className="mt-4 flex gap-2">
                                         <button type="button" onClick={() => setBrowseMode(false)} className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-bold text-gray-600">返回</button>
-                                        <button type="button" disabled={folderLoading} onClick={() => {
-                                            if (autoCreateProjectFolder) onSelectParentFolder(currentFolder);
-                                            else onSelectFolder(currentFolder);
-                                            setBrowseMode(false);
+                                        <button type="button" disabled={folderLoading} onClick={async () => {
+                                            const selected = autoCreateProjectFolder ? await onSelectParentFolder(currentFolder) : await onSelectFolder(currentFolder);
+                                            if (selected !== false) setBrowseMode(false);
                                         }} className="min-w-0 flex-1 rounded-xl bg-kino px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40"><i className="fas fa-folder-check mr-1.5"></i>{autoCreateProjectFolder ? '設為上級目錄' : `使用「${currentFolder.name}」`}</button>
                                     </div>
                                 </div>
@@ -1750,7 +1755,7 @@
                                         <div className="flex items-center gap-3">
                                             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2f2f2f] text-white"><i className="fa-brands fa-microsoft"></i></span>
                                             <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-gray-800">{account.name || 'Microsoft 帳號'}</p><p className="truncate text-xs text-gray-500">{account.username}</p></div>
-                                            <button type="button" onClick={onLogout} className="text-xs font-bold text-gray-400 hover:text-red-500">登出</button>
+                                            <button type="button" onClick={onLogout} className="text-xs font-bold text-gray-400 hover:text-red-500">{bindingMode ? '解除綁定' : '登出'}</button>
                                         </div>
                                     </div>
                                     <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
@@ -1773,7 +1778,8 @@
                                         <span><span className="block text-sm font-bold text-gray-800">自動儲存 JSON</span><span className="mt-1 block text-xs leading-relaxed text-gray-500">停止編輯約 3 秒後，自動覆寫目前報價單號的 JSON。</span></span>
                                         <input type="checkbox" disabled={!(autoCreateProjectFolder ? parentFolder : folder)} checked={Boolean((autoCreateProjectFolder ? parentFolder : folder) && autoSave)} onChange={event => onToggleAutoSave(event.target.checked)} className="h-5 w-5 shrink-0 accent-kino" />
                                     </label>
-                                    <button type="button" disabled={!(autoCreateProjectFolder ? parentFolder : folder) || status === 'saving'} onClick={onSaveNow} className="w-full rounded-xl bg-kino px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-35"><i className={`fas ${status === 'saving' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-1.5`}></i>{status === 'saving' ? '儲存中…' : '立即儲存到 OneDrive'}</button>
+                                    {!(autoCreateProjectFolder ? parentFolder : folder) && <p className="text-xs leading-relaxed text-amber-700">{autoCreateProjectFolder ? '請先選擇上級目錄，系統才知道在哪裡建立專案資料夾。' : '請先選擇專案資料夾。'}點「立即儲存」即可選擇位置。</p>}
+                                    <button type="button" disabled={status === 'saving' || (bindingMode && folderLoading)} onClick={(autoCreateProjectFolder ? parentFolder : folder) ? onSaveNow : openBrowser} className="w-full rounded-xl bg-kino px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-35"><i className={`fas ${status === 'saving' ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-1.5`}></i>{status === 'saving' ? '儲存中…' : '立即儲存到 OneDrive'}</button>
                                     {lastSavedAt && <p className="text-center text-xs text-gray-400">最近儲存：{new Date(lastSavedAt).toLocaleString('zh-TW')}</p>}
                                 </div>
                             )}
@@ -2644,6 +2650,7 @@
         const ONEDRIVE_PARENT_FOLDER_STORAGE_KEY = 'kino_quotation_onedrive_parent_folder_v1';
         const ONEDRIVE_AUTO_CREATE_FOLDER_STORAGE_KEY = 'kino_quotation_onedrive_auto_create_folder_v1';
         const ONEDRIVE_AUTOSAVE_STORAGE_KEY = 'kino_quotation_onedrive_autosave_v1';
+        const ONEDRIVE_LINK_STORAGE_KEY = 'kino_quotation_onedrive_link_v1';
         const PRINT_SCALE_STORAGE_KEY = 'kino_quotation_print_scale_v1';
         const PRINT_SCALE_MIN = 70;
         const PRINT_SCALE_MAX = 100;
@@ -2934,6 +2941,10 @@
             const [cloudAuthStatus, setCloudAuthStatus] = useState('idle');
             const [googleClientId, setGoogleClientId] = useState('');
             const [microsoftClientId, setMicrosoftClientId] = useState('');
+            const [oneDriveBindingEnabled, setOneDriveBindingEnabled] = useState(false);
+            const [cloudConfigReady, setCloudConfigReady] = useState(false);
+            const [verifiedGoogle, setVerifiedGoogle] = useState(null);
+            const [oneDriveNeedsReconnect, setOneDriveNeedsReconnect] = useState(false);
             const [cloudAuthUser, setCloudAuthUser] = useState(() => {
                 try { return JSON.parse(sessionStorage.getItem(CLOUD_AUTH_USER_STORAGE_KEY) || 'null'); }
                 catch { return null; }
@@ -2951,10 +2962,10 @@
             const [cloudVersionStatus, setCloudVersionStatus] = useState('idle');
             const [showOneDriveModal, setShowOneDriveModal] = useState(false);
             const [oneDriveAccount, setOneDriveAccount] = useState(null);
-            const [oneDriveFolder, setOneDriveFolder] = useState(loadOneDriveFolder);
-            const [oneDriveParentFolder, setOneDriveParentFolder] = useState(loadOneDriveParentFolder);
-            const [oneDriveAutoCreateProjectFolder, setOneDriveAutoCreateProjectFolder] = useState(() => localStorage.getItem(ONEDRIVE_AUTO_CREATE_FOLDER_STORAGE_KEY) === 'true');
-            const [oneDriveAutoSave, setOneDriveAutoSave] = useState(() => localStorage.getItem(ONEDRIVE_AUTOSAVE_STORAGE_KEY) === 'true');
+            const [oneDriveFolder, setOneDriveFolder] = useState(null);
+            const [oneDriveParentFolder, setOneDriveParentFolder] = useState(null);
+            const [oneDriveAutoCreateProjectFolder, setOneDriveAutoCreateProjectFolder] = useState(false);
+            const [oneDriveAutoSave, setOneDriveAutoSave] = useState(false);
             const [oneDriveStatus, setOneDriveStatus] = useState('idle');
             const [oneDriveLastSavedAt, setOneDriveLastSavedAt] = useState('');
             const [oneDriveFolders, setOneDriveFolders] = useState([]);
@@ -2968,6 +2979,11 @@
             const msalInstanceRef = useRef(null);
             const oneDriveAutoSaveTimerRef = useRef(null);
             const oneDriveWrites = useRef(Promise.resolve());
+            const oneDriveIdentityRef = useRef(null);
+            const oneDriveGenerationRef = useRef(0);
+            const oneDriveRevisionRef = useRef(null);
+            const oneDriveWriteEpochRef = useRef(0);
+            const oneDriveDataBaselineRef = useRef(data);
             const allContractTemplates = [...BUILTIN_CONTRACT_TEMPLATES, ...contractTemplates];
             
             // Toast State
@@ -3344,15 +3360,17 @@
             useEffect(() => { localStorage.setItem(DELETED_CLAUSE_CATEGORY_STORAGE_KEY, JSON.stringify(deletedClauseCategoryIds)); }, [deletedClauseCategoryIds]);
             useEffect(() => { localStorage.setItem(DELETED_STAMP_STORAGE_KEY, JSON.stringify(deletedStampIds)); }, [deletedStampIds]);
             useEffect(() => {
+                if (!cloudConfigReady || oneDriveBindingEnabled) return;
                 if (oneDriveFolder) localStorage.setItem(ONEDRIVE_FOLDER_STORAGE_KEY, JSON.stringify(oneDriveFolder));
                 else localStorage.removeItem(ONEDRIVE_FOLDER_STORAGE_KEY);
-            }, [oneDriveFolder]);
+            }, [oneDriveFolder, cloudConfigReady, oneDriveBindingEnabled]);
             useEffect(() => {
+                if (!cloudConfigReady || oneDriveBindingEnabled) return;
                 if (oneDriveParentFolder) localStorage.setItem(ONEDRIVE_PARENT_FOLDER_STORAGE_KEY, JSON.stringify(oneDriveParentFolder));
                 else localStorage.removeItem(ONEDRIVE_PARENT_FOLDER_STORAGE_KEY);
-            }, [oneDriveParentFolder]);
-            useEffect(() => { localStorage.setItem(ONEDRIVE_AUTO_CREATE_FOLDER_STORAGE_KEY, String(oneDriveAutoCreateProjectFolder)); }, [oneDriveAutoCreateProjectFolder]);
-            useEffect(() => { localStorage.setItem(ONEDRIVE_AUTOSAVE_STORAGE_KEY, String(oneDriveAutoSave)); }, [oneDriveAutoSave]);
+            }, [oneDriveParentFolder, cloudConfigReady, oneDriveBindingEnabled]);
+            useEffect(() => { if (cloudConfigReady && !oneDriveBindingEnabled) localStorage.setItem(ONEDRIVE_AUTO_CREATE_FOLDER_STORAGE_KEY, String(oneDriveAutoCreateProjectFolder)); }, [oneDriveAutoCreateProjectFolder, cloudConfigReady, oneDriveBindingEnabled]);
+            useEffect(() => { if (cloudConfigReady && !oneDriveBindingEnabled) localStorage.setItem(ONEDRIVE_AUTOSAVE_STORAGE_KEY, String(oneDriveAutoSave)); }, [oneDriveAutoSave, cloudConfigReady, oneDriveBindingEnabled]);
             useEffect(() => {
                 const mediaQuery = window.matchMedia('(max-width: 767px)');
                 const syncResponsiveMode = () => setMode(mediaQuery.matches ? 'mobile' : 'desktop');
@@ -3595,11 +3613,14 @@
                     if (response.status === 401 && sessionStorage.getItem(CLOUD_AUTH_TOKEN_STORAGE_KEY) === syncKey) {
                         sessionStorage.removeItem(CLOUD_AUTH_TOKEN_STORAGE_KEY);
                         sessionStorage.removeItem(CLOUD_AUTH_USER_STORAGE_KEY);
+                        setVerifiedGoogle(null);
+                        if (oneDriveBindingEnabled) clearBoundOneDrive();
                         setCloudAuthUser(null);
                     }
                     const body = await response.json().catch(() => ({}));
                     const error = new Error(body.error || `雲端同步失敗 (${response.status})`);
                     error.status = response.status;
+                    error.code = body.code || '';
                     throw error;
                 }
                 return response.json();
@@ -3634,17 +3655,199 @@
                 reader.onload = () => resolve(String(reader.result || ''));
                 reader.readAsDataURL(blob);
             });
+            const clearBoundOneDrive = () => {
+                oneDriveGenerationRef.current += 1;
+                oneDriveIdentityRef.current = null;
+                oneDriveRevisionRef.current = null;
+                clearTimeout(oneDriveAutoSaveTimerRef.current);
+                oneDriveDataBaselineRef.current = data;
+                setOneDriveAccount(null);
+                setOneDriveFolder(null);
+                setOneDriveParentFolder(null);
+                setOneDriveAutoCreateProjectFolder(false);
+                setOneDriveAutoSave(false);
+                setOneDriveNeedsReconnect(false);
+                setOneDriveLastSavedAt('');
+                setOneDriveFolders([]);
+                setOneDriveFolderStack([{id:'root', name:'OneDrive', path:'/'}]);
+                setOneDriveFolderError('');
+                setOneDriveFolderLoading(false);
+                setOneDriveStatus('idle');
+            };
+            const isCurrentOneDriveIdentity = identity => Boolean(identity &&
+                oneDriveIdentityRef.current === identity &&
+                identity.generation === oneDriveGenerationRef.current &&
+                getCloudSyncKey() === identity.token);
+            const boundOneDriveRequest = async (path, options = {}, identity = oneDriveIdentityRef.current) => {
+                if (!isCurrentOneDriveIdentity(identity)) throw new Error('OneDrive 帳號已變更');
+                let result;
+                try {
+                    result = await cloudRequest(`/api/onedrive${path}`, options, false);
+                } catch (error) {
+                    if (path !== '/folder' && isCurrentOneDriveIdentity(identity) && (error.code === 'ONEDRIVE_REAUTH_REQUIRED' ||
+                        (error.status === 409 && path === '/save'))) {
+                        clearTimeout(oneDriveAutoSaveTimerRef.current);
+                        setOneDriveAutoSave(false);
+                        if (error.code === 'ONEDRIVE_REAUTH_REQUIRED') setOneDriveNeedsReconnect(true);
+                        oneDriveRevisionRef.current = null;
+                        if (path) {
+                            await refreshBoundOneDriveStatus(identity);
+                        }
+                    }
+                    throw error;
+                }
+                if (!isCurrentOneDriveIdentity(identity)) throw new Error('OneDrive 帳號已變更');
+                return result;
+            };
+            const applyBoundOneDriveStatus = (result, identity) => {
+                if (!isCurrentOneDriveIdentity(identity)) return;
+                oneDriveRevisionRef.current = result.bound ? result.revision : null;
+                oneDriveDataBaselineRef.current = data;
+                clearTimeout(oneDriveAutoSaveTimerRef.current);
+                setOneDriveAutoSave(false);
+                setOneDriveAccount(result.bound ? result.account : null);
+                setOneDriveNeedsReconnect(Boolean(result.needsReconnect));
+                const folder = result.bound ? result.folder : null;
+                setOneDriveAutoCreateProjectFolder(Boolean(folder?.autoCreateProjectFolder));
+                setOneDriveFolder(folder && !folder.autoCreateProjectFolder ? folder : null);
+                setOneDriveParentFolder(folder?.autoCreateProjectFolder ? folder : null);
+                setOneDriveStatus('idle');
+            };
+            const refreshBoundOneDriveStatus = async (identity = oneDriveIdentityRef.current) => {
+                if (!isCurrentOneDriveIdentity(identity)) return false;
+                clearTimeout(oneDriveAutoSaveTimerRef.current);
+                setOneDriveAutoSave(false);
+                setOneDriveFolderLoading(true);
+                setOneDriveStatus('loading');
+                setOneDriveFolderError('');
+                try {
+                    const result = await boundOneDriveRequest('', {}, identity);
+                    applyBoundOneDriveStatus(result, identity);
+                    return true;
+                } catch {
+                    if (isCurrentOneDriveIdentity(identity)) {
+                        setOneDriveStatus('error');
+                        setOneDriveFolderError('無法重新讀取 OneDrive 連線，請按「重新讀取連線」重試。');
+                    }
+                    return false;
+                } finally {
+                    if (isCurrentOneDriveIdentity(identity)) setOneDriveFolderLoading(false);
+                }
+            };
+            useEffect(() => {
+                if (!cloudConfigReady || !oneDriveBindingEnabled) return;
+                clearBoundOneDrive();
+                if (!verifiedGoogle?.userId || verifiedGoogle.token !== getCloudSyncKey()) return;
+                const identity = {...verifiedGoogle, generation:oneDriveGenerationRef.current};
+                oneDriveIdentityRef.current = identity;
+                const restore = async () => {
+                    try {
+                        const stored = sessionStorage.getItem(ONEDRIVE_LINK_STORAGE_KEY);
+                        if (stored) {
+                            let pending;
+                            try { pending = JSON.parse(stored); } catch { /* Invalid handoffs cannot authorize binding. */ }
+                            if (pending?.code && pending.state && pending.verifier && pending.userId === identity.userId) {
+                                // Consume before POST so reload cannot replay this authorization code.
+                                sessionStorage.removeItem(ONEDRIVE_LINK_STORAGE_KEY);
+                                const result = await boundOneDriveRequest('/complete', {
+                                    method:'POST', body:JSON.stringify({state:pending.state, code:pending.code, verifier:pending.verifier})
+                                }, identity);
+                                applyBoundOneDriveStatus(result, identity);
+                                setShowOneDriveModal(true);
+                                return;
+                            }
+                            if (!pending?.state || !pending.verifier || pending.userId !== identity.userId || pending.error) {
+                                sessionStorage.removeItem(ONEDRIVE_LINK_STORAGE_KEY);
+                                if (pending?.error) showToast('OneDrive 綁定未完成，請重試');
+                            }
+                        }
+                        const result = await boundOneDriveRequest('', {}, identity);
+                        applyBoundOneDriveStatus(result, identity);
+                    } catch (error) {
+                        if (!isCurrentOneDriveIdentity(identity)) return;
+                        setOneDriveStatus('error');
+                        setOneDriveFolderError(error.message);
+                    }
+                };
+                restore();
+                return () => {
+                    if (oneDriveIdentityRef.current === identity) {
+                        oneDriveIdentityRef.current = null;
+                        oneDriveGenerationRef.current += 1;
+                        clearTimeout(oneDriveAutoSaveTimerRef.current);
+                    }
+                };
+            }, [cloudConfigReady, oneDriveBindingEnabled, verifiedGoogle]);
+            const startOneDriveBinding = async () => {
+                const identity = oneDriveIdentityRef.current;
+                if (!isCurrentOneDriveIdentity(identity)) { setShowCloudKeyModal(true); return; }
+                setOneDriveStatus('signingIn');
+                try {
+                    const encode = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+                    const verifier = encode(crypto.getRandomValues(new Uint8Array(32)));
+                    const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+                    const result = await boundOneDriveRequest('/start', {method:'POST', body:JSON.stringify({challenge})}, identity);
+                    const target = new URL(result.authorizationUrl);
+                    if (target.origin !== 'https://login.microsoftonline.com' || !result.state) throw new Error('OneDrive 授權網址不正確');
+                    sessionStorage.setItem(ONEDRIVE_LINK_STORAGE_KEY, JSON.stringify({state:result.state, verifier, userId:identity.userId}));
+                    window.location.assign(target.href);
+                } catch (error) {
+                    if (!isCurrentOneDriveIdentity(identity)) return;
+                    setOneDriveStatus('error');
+                    showToast(error.message);
+                }
+            };
+            const setBoundOneDriveFolder = async (folder, autoCreateProjectFolder) => {
+                const identity = oneDriveIdentityRef.current;
+                const revision = oneDriveRevisionRef.current;
+                if (!isCurrentOneDriveIdentity(identity)) return false;
+                if (typeof revision !== 'string' || !revision) {
+                    setOneDriveFolderError('請先重新讀取連線，再選擇資料夾。');
+                    return false;
+                }
+                oneDriveWriteEpochRef.current += 1;
+                oneDriveRevisionRef.current = null;
+                setOneDriveAutoSave(false);
+                clearTimeout(oneDriveAutoSaveTimerRef.current);
+                setOneDriveFolderLoading(true);
+                setOneDriveStatus('loading');
+                setOneDriveFolderError('');
+                try {
+                    const result = await boundOneDriveRequest('/folder', {method:'POST', body:JSON.stringify({folderId:folder.id, autoCreateProjectFolder, revision})}, identity);
+                    applyBoundOneDriveStatus(result, identity);
+                    return isCurrentOneDriveIdentity(identity);
+                } catch (error) {
+                    if (!isCurrentOneDriveIdentity(identity)) return false;
+                    if (error.code === 'ONEDRIVE_REAUTH_REQUIRED') setOneDriveNeedsReconnect(true);
+                    const restored = await refreshBoundOneDriveStatus(identity);
+                    if (!isCurrentOneDriveIdentity(identity)) return false;
+                    if (restored) setOneDriveFolderError('資料夾設定失敗，已重新讀取連線；請重新選擇資料夾。');
+                    showToast(error.message);
+                    return false;
+                } finally {
+                    if (isCurrentOneDriveIdentity(identity)) setOneDriveFolderLoading(false);
+                }
+            };
             useEffect(() => {
                 fetch(`${CLOUD_SYNC_API_URL}/api/config`)
                     .then(response => response.ok ? response.json() : Promise.reject(new Error('Config unavailable')))
                     .then(config => {
                         setGoogleClientId(config.googleClientId || '');
                         setMicrosoftClientId(config.microsoftClientId || '');
+                        setOneDriveBindingEnabled(config.oneDriveBindingEnabled === true);
+                        if (config.oneDriveBindingEnabled === true) clearBoundOneDrive();
+                        else {
+                            setOneDriveFolder(loadOneDriveFolder());
+                            setOneDriveParentFolder(loadOneDriveParentFolder());
+                            setOneDriveAutoCreateProjectFolder(localStorage.getItem(ONEDRIVE_AUTO_CREATE_FOLDER_STORAGE_KEY) === 'true');
+                            setOneDriveAutoSave(localStorage.getItem(ONEDRIVE_AUTOSAVE_STORAGE_KEY) === 'true');
+                        }
+                        setCloudConfigReady(true);
                     })
                     .catch(error => console.warn('Cloud config load error', error));
             }, []);
             useEffect(() => {
-                if (!microsoftClientId || !window.msal?.PublicClientApplication) return;
+                if (!cloudConfigReady || oneDriveBindingEnabled || !microsoftClientId || !window.msal?.PublicClientApplication) return;
                 let active = true;
                 const initializeMicrosoftLogin = async () => {
                     try {
@@ -3686,12 +3889,15 @@
                 };
                 initializeMicrosoftLogin();
                 return () => { active = false; };
-            }, [microsoftClientId]);
+            }, [microsoftClientId, cloudConfigReady, oneDriveBindingEnabled]);
             useEffect(() => {
-                if (!sessionStorage.getItem(CLOUD_AUTH_TOKEN_STORAGE_KEY)) return;
+                const token = sessionStorage.getItem(CLOUD_AUTH_TOKEN_STORAGE_KEY);
+                if (!token) return;
                 cloudRequest('/api/auth/me', {}, false)
                     .then(result => {
+                        if (getCloudSyncKey() !== token) return;
                         if (result.user) {
+                            setVerifiedGoogle({userId: result.user.id, token});
                             setCloudAuthUser(result.user);
                             sessionStorage.setItem(CLOUD_AUTH_USER_STORAGE_KEY, JSON.stringify(result.user));
                             setLastCloudAuthUser(result.user);
@@ -3711,10 +3917,15 @@
                     });
                     const result = await response.json().catch(() => ({}));
                     if (!response.ok) throw new Error(result.error || 'Google 登入失敗');
+                    if (oneDriveBindingEnabled) clearBoundOneDrive();
+                    setVerifiedGoogle(null);
                     sessionStorage.setItem(CLOUD_AUTH_TOKEN_STORAGE_KEY, result.token);
                     sessionStorage.setItem(CLOUD_AUTH_USER_STORAGE_KEY, JSON.stringify(result.user));
                     sessionStorage.removeItem(CLOUD_SYNC_KEY_STORAGE_KEY);
                     setCloudAuthUser(result.user);
+                    const verified = await cloudRequest('/api/auth/me', {}, false);
+                    if (getCloudSyncKey() !== result.token || verified.user?.id !== result.user.id) throw new Error('Google 帳號驗證不一致，請重新登入');
+                    setVerifiedGoogle({userId: verified.user.id, token: result.token});
                     setLastCloudAuthUser(result.user);
                     localStorage.setItem(CLOUD_LAST_AUTH_USER_STORAGE_KEY, JSON.stringify(result.user));
                     setCloudAuthStatus('success');
@@ -3728,11 +3939,15 @@
                 }
             };
             const logoutCloudAccount = async () => {
+                const logoutToken = getCloudSyncKey();
+                setVerifiedGoogle(null);
+                if (oneDriveBindingEnabled) clearBoundOneDrive();
                 try {
                     if (getCloudSyncKey()) await cloudRequest('/api/auth/logout', { method: 'POST', body: '{}' }, false);
                 } catch (error) {
                     console.warn('Cloud logout error', error);
                 }
+                if (getCloudSyncKey() !== logoutToken) return;
                 sessionStorage.removeItem(CLOUD_AUTH_TOKEN_STORAGE_KEY);
                 sessionStorage.removeItem(CLOUD_AUTH_USER_STORAGE_KEY);
                 setCloudAuthUser(null);
@@ -3741,6 +3956,7 @@
                 showToast('已登出 Google 帳號');
             };
             const loginOneDrive = async () => {
+                if (oneDriveBindingEnabled) return startOneDriveBinding();
                 if (!microsoftClientId || !msalInstanceRef.current) {
                     showToast('Microsoft 登入設定尚未完成');
                     return;
@@ -3799,10 +4015,27 @@
                 return response;
             };
             const loadOneDriveFolders = async (targetFolder, nextStack) => {
+                const identity = oneDriveIdentityRef.current;
                 setOneDriveFolderLoading(true);
                 setOneDriveFolderError('');
                 setOneDriveStatus('loading');
                 try {
+                    if (oneDriveBindingEnabled) {
+                        const results = [];
+                        let cursor;
+                        do {
+                            const query = new URLSearchParams({folderId:targetFolder.id});
+                            if (cursor) query.set('cursor', cursor);
+                            const body = await boundOneDriveRequest(`/folders?${query}`, {}, identity);
+                            results.push(...(Array.isArray(body.value) ? body.value : []));
+                            cursor = body.nextCursor;
+                        } while (cursor);
+                        if (!isCurrentOneDriveIdentity(identity)) return;
+                        setOneDriveFolders(results.sort((a,b) => a.name.localeCompare(b.name,'zh-TW')));
+                        if (nextStack) setOneDriveFolderStack(nextStack);
+                        setOneDriveStatus('idle');
+                        return;
+                    }
                     const query = '?$select=id,name,folder,parentReference,webUrl&$orderby=name&$top=200';
                     let nextUrl = targetFolder.id === 'root'
                         ? `/me/drive/root/children${query}`
@@ -3820,11 +4053,12 @@
                     if (nextStack) setOneDriveFolderStack(nextStack);
                     setOneDriveStatus('idle');
                 } catch (error) {
+                    if (oneDriveBindingEnabled && !isCurrentOneDriveIdentity(identity)) return;
                     console.error('OneDrive folder load error', error);
                     setOneDriveFolderError(error.message || '無法讀取 OneDrive 資料夾');
                     setOneDriveStatus('error');
                 } finally {
-                    setOneDriveFolderLoading(false);
+                    if (!oneDriveBindingEnabled || isCurrentOneDriveIdentity(identity)) setOneDriveFolderLoading(false);
                 }
             };
             const browseOneDriveRoot = async () => {
@@ -3854,6 +4088,7 @@
                 if (target) await loadOneDriveFolders(target, nextStack);
             };
             const selectOneDriveFolder = (folder) => {
+                if (oneDriveBindingEnabled) return setBoundOneDriveFolder(folder, false);
                 const selected = {
                     ...folder,
                     stack: oneDriveFolderStack.map(item => ({ id: item.id, name: item.name, path: item.path })),
@@ -3865,6 +4100,7 @@
                 showToast(`OneDrive 資料夾：${selected.path || selected.name}`);
             };
             const selectOneDriveParentFolder = (folder) => {
+                if (oneDriveBindingEnabled) return setBoundOneDriveFolder(folder, true);
                 const selected = {
                     ...folder,
                     stack: oneDriveFolderStack.map(item => ({ id: item.id, name: item.name, path: item.path })),
@@ -3931,6 +4167,41 @@
             };
             const saveDataToOneDrive = (options = {}) => {
                 clearTimeout(oneDriveAutoSaveTimerRef.current);
+                if (oneDriveBindingEnabled) {
+                    const identity = oneDriveIdentityRef.current;
+                    const revision = oneDriveRevisionRef.current;
+                    const epoch = oneDriveWriteEpochRef.current;
+                    const quotation = JSON.parse(JSON.stringify(data));
+                    const destination = oneDriveAutoCreateProjectFolder ? oneDriveParentFolder : oneDriveFolder;
+                    const current = () => isCurrentOneDriveIdentity(identity) && epoch === oneDriveWriteEpochRef.current && revision != null && revision === oneDriveRevisionRef.current;
+                    if (!current() || !oneDriveAccount || oneDriveNeedsReconnect || !destination) {
+                        if (!options.silent) {
+                            setShowOneDriveModal(true);
+                            if (isCurrentOneDriveIdentity(identity) && revision == null) setOneDriveFolderError('請先重新讀取連線，再儲存。');
+                        }
+                        return Promise.resolve(false);
+                    }
+                    const job = oneDriveWrites.current.then(async () => {
+                        if (!current()) return false;
+                        setOneDriveStatus('saving');
+                        try {
+                            const result = await boundOneDriveRequest('/save', {method:'POST', body:JSON.stringify({quotationId:quotation.header.quotationId, quotation, revision})}, identity);
+                            if (!current()) return false;
+                            setOneDriveLastSavedAt(new Date().toISOString());
+                            setOneDriveStatus('saved');
+                            if (!options.silent) showToast(`已存至 OneDrive：${result.name}`);
+                            setTimeout(() => { if (current()) setOneDriveStatus('idle'); }, 1800);
+                            return true;
+                        } catch (error) {
+                            if (!current()) return false;
+                            setOneDriveStatus('error');
+                            if (!options.silent) showToast(error.message);
+                            return false;
+                        }
+                    });
+                    oneDriveWrites.current = job.catch(() => {});
+                    return job;
+                }
                 const job = oneDriveWrites.current.then(() => writeOneDriveSnapshot(options));
                 oneDriveWrites.current = job.catch(() => {});
                 return job;
@@ -3971,6 +4242,23 @@
                 }
             };
             const logoutOneDrive = async () => {
+                if (oneDriveBindingEnabled) {
+                    if (!window.confirm('解除目前 Google 帳號的 OneDrive 綁定？不會刪除 OneDrive 檔案。')) return;
+                    const identity = oneDriveIdentityRef.current;
+                    oneDriveWriteEpochRef.current += 1;
+                    clearTimeout(oneDriveAutoSaveTimerRef.current);
+                    setOneDriveAutoSave(false);
+                    oneDriveRevisionRef.current = null;
+                    try {
+                        const result = await boundOneDriveRequest('', {method:'DELETE'}, identity);
+                        applyBoundOneDriveStatus(result, identity);
+                        setOneDriveFolders([]);
+                        setOneDriveFolderStack([{id:'root',name:'OneDrive',path:'/'}]);
+                    } catch (error) {
+                        if (isCurrentOneDriveIdentity(identity)) { await refreshBoundOneDriveStatus(identity); showToast(error.message); }
+                    }
+                    return;
+                }
                 const instance = msalInstanceRef.current;
                 const account = instance?.getActiveAccount() || oneDriveAccount;
                 setOneDriveAccount(null);
@@ -4328,6 +4616,8 @@
             };
             const saveCloudSyncKey = (syncKey) => {
                 if (!syncKey) return;
+                setVerifiedGoogle(null);
+                if (oneDriveBindingEnabled) clearBoundOneDrive();
                 sessionStorage.setItem(CLOUD_SYNC_KEY_STORAGE_KEY, syncKey);
                 sessionStorage.removeItem(CLOUD_AUTH_TOKEN_STORAGE_KEY);
                 sessionStorage.removeItem(CLOUD_AUTH_USER_STORAGE_KEY);
@@ -4537,6 +4827,10 @@
             };
             useEffect(() => {
                 if (oneDriveAutoSaveTimerRef.current) clearTimeout(oneDriveAutoSaveTimerRef.current);
+                const changed = oneDriveDataBaselineRef.current !== data;
+                oneDriveDataBaselineRef.current = data;
+                if (!cloudConfigReady) return;
+                if (oneDriveBindingEnabled && (!changed || oneDriveNeedsReconnect || !isCurrentOneDriveIdentity(oneDriveIdentityRef.current))) return;
                 const hasDestination = oneDriveAutoCreateProjectFolder ? oneDriveParentFolder : oneDriveFolder;
                 if (!oneDriveAutoSave || !oneDriveAccount || !hasDestination) return;
                 oneDriveAutoSaveTimerRef.current = setTimeout(() => {
@@ -4545,7 +4839,7 @@
                 return () => {
                     if (oneDriveAutoSaveTimerRef.current) clearTimeout(oneDriveAutoSaveTimerRef.current);
                 };
-            }, [data, oneDriveAutoSave, oneDriveAutoCreateProjectFolder, oneDriveAccount?.homeAccountId, oneDriveFolder?.id, oneDriveParentFolder?.id]);
+            }, [data, oneDriveAutoSave, oneDriveAutoCreateProjectFolder, oneDriveAccount?.homeAccountId, oneDriveFolder?.id, oneDriveParentFolder?.id, cloudConfigReady, oneDriveBindingEnabled, oneDriveNeedsReconnect]);
             const handleStampAssetsChange = nextAssets => {
                 const normalized = Array.isArray(nextAssets) ? nextAssets.map(normalizeStampAsset) : [];
                 const nextIds = new Set(normalized.map(asset => asset.id));
@@ -4588,7 +4882,11 @@
                     {showCloudVersionsModal && <CloudVersionModal versions={cloudVersions} status={cloudVersionStatus} onClose={() => setShowCloudVersionsModal(false)} onRefresh={loadCloudVersions} onDownload={downloadCloudVersion} onRestore={restoreCloudVersion} />}
                     {showOneDriveModal && <OneDriveModal
                         onClose={() => setShowOneDriveModal(false)}
-                        clientId={microsoftClientId}
+                        clientId={oneDriveBindingEnabled ? 'backend' : microsoftClientId}
+                        bindingMode={oneDriveBindingEnabled}
+                        googleReady={isCurrentOneDriveIdentity(oneDriveIdentityRef.current)}
+                        needsReconnect={oneDriveNeedsReconnect}
+                        onRefreshBinding={() => refreshBoundOneDriveStatus()}
                         account={oneDriveAccount}
                         folder={oneDriveFolder}
                         parentFolder={oneDriveParentFolder}
@@ -4608,7 +4906,16 @@
                         onGoToBreadcrumb={goToOneDriveBreadcrumb}
                         onSelectFolder={selectOneDriveFolder}
                         onSelectParentFolder={selectOneDriveParentFolder}
-                        onToggleAutoCreateProjectFolder={setOneDriveAutoCreateProjectFolder}
+                        onToggleAutoCreateProjectFolder={enabled => {
+                            if (oneDriveBindingEnabled) {
+                                const selected = oneDriveAutoCreateProjectFolder ? oneDriveParentFolder : oneDriveFolder;
+                                if (selected) setBoundOneDriveFolder(selected, enabled);
+                                else setOneDriveAutoCreateProjectFolder(enabled);
+                                return;
+                            }
+                            if (enabled && !oneDriveParentFolder && oneDriveFolder) setOneDriveParentFolder(oneDriveFolder);
+                            setOneDriveAutoCreateProjectFolder(enabled);
+                        }}
                         onToggleAutoSave={setOneDriveAutoSave}
                         onSaveNow={() => saveDataToOneDrive()}
                     />}
