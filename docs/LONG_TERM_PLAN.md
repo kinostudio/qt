@@ -34,7 +34,7 @@
 4. [x] 使用者確認建立獨立 `kinostudio/qt`。新庫已建立、主線及12個回退標籤已推送；原 `aaronkino/qt` 保留。公開DNS查詢兩個新名稱最初皆為NXDOMAIN。已依使用者要求透過Cloudflare網頁只新增 `qt` CNAME → `kino-quotation-editor.pages.dev`（Proxy，自動TTL），DNS記錄由23筆增至24筆；`quote` 尚未新增。
 5. [x] 已建立 `scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`；僅 `index.html` 與 `assets/`，拒絕資產符號連結。`tests/build-editor.test.mjs` 核對白名單、PDF模組與前期功能標記；12項本機測試通過。尚未接入新站部署；簽署站另建獨立白名單。
 6. [x] 獨立 Git 整合專案 `kino-quotation-editor` 已建立，來源 `kinostudio/qt` main；建置命令 `node scripts/build-editor.mjs`，輸出 `tmp/qt-editor-site`。首次部署 `9a2b4409-01e7-41d3-9aa2-f552777cb436` 顯示deploy/success，預覽為 `https://kino-quotation-editor.pages.dev`。舊GitHub Pages workflow僅允許原 `aaronkino/qt` 執行，避免新庫誤啟動GitHub Pages。尚需驗證後續push自動建置及自訂網域HTTPS。
-7. [ ] 新站使用既有 Google Client ID，新增來源與需要的 redirect URI；OneDrive 新增 SPA redirect URI `https://qt.kinostudio.tw/`。保留舊網址設定直到驗收完成，不重建帳號／工作區。
+7. [x] 既有 Google Client ID 已新增新站來源（使用者保存），新站實際登入 `kinostudio.tw@gmail.com` 並顯示同步完成。OneDrive 已由代理依使用者當下確認新增 SPA redirect URI `https://qt.kinostudio.tw/`，清單顯示新增成功且保留舊站／localhost。不重建帳號／工作區；OneDrive 新站實際登入仍待驗收。
 8. [x] 新站 HTTPS／字型驗證後，CORS 新增編輯台來源並保留舊站；PDF 字型與 CSP 改新站。Worker 版本 `19165970-f5d4-4dfe-a14c-43d19ffb3d03` 已部署，未改 D1／R2 綁定或資料。公開 OPTIONS 驗證新舊編輯台均204，客戶簽署網域403。
 9. [ ] 以假資料回歸：桌面與手機、登入恢復、差異／刪除衝突、OneDrive、列印70/85/100、快速／詳細 PDF、中文填寫存檔、印章跨格與頁碼。
 10. [ ] 舊站實際瀏覽器本機資料做可還原備份：草稿、完整專案、條款範本、分類、條款、印章圖片與版面設定；排除登入Token。不能用空白隔離瀏覽器的備份冒充使用者備份。
@@ -56,8 +56,8 @@
 
 ### 分批開發
 
-1. [ ] 設計新增的獨立資料表與R2專用key前綴；沿用資源但不修改既有資料列。先建立本機 migration 與測試，正式套用需明確列出影響。
-2. [ ] 後端建立／讀取／撤銷分享與權限邊界測試。
+1. [x] 新增獨立 `quote_signing_requests` 表與 `quote-signing/v1/` R2前綴設計，migration `0008_quote_signing.sql` 在記憶體SQLite通過；既有表結構／資料保持不變。尚未正式套用，影響與公開前缺口見 `docs/signing-storage.md`。
+2. [x] 已在開發分支接入建立／讀取／撤銷API，透過Worker fetch入口、記憶體SQLite及模擬bindings驗證Google身分、簽署帳號白名單、工作區、客戶來源及權杖隔離。預設停用，尚未正式部署；Workers runtime驗收另列後續缺口。
 3. [ ] 客戶手機頁：閱讀、填寫、手寫／上傳、預覽、確認、完成頁與下載／列印。
 4. [ ] 簽署原子性、重試與PDF固定版本；錯誤復原、已簽內容防覆寫。
 5. [ ] 編輯台建立連結、簽署狀態、開啟／下載已簽版本。
@@ -70,7 +70,7 @@
 - `qt.kinostudio.tw` 自訂網域、驗證與憑證狀態皆已 active，HTTPS200；字型與本機 SHA-256 相同。push 自動建置已由 `bb45cc6` 的部署 `d13a8679-ff30-4787-bc94-baa349caa067` 驗證成功。
 - 完整本機備份／還原工具已實作；17項單元測試與隔離手機跨網址匯出／還原／重新載入測試通過，沒有增加同步或 OneDrive 寫入。修復初次載入 effect 覆寫還原草稿的問題。這不是使用者正式資料已備份的證明。
 - 舊站僅新增只讀備份輔助頁 `https://aaronkino.github.io/qt/assets/migration-backup.html`（原庫 `d1c72cd`），HTTPS200；未替換舊站編輯台或後端。實際備份須在原本使用的瀏覽器／設定檔操作。
-- 仍需新增Google來源與Microsoft SPA redirect設定並完成實際登入驗收；使用者完整本機備份與新站還原驗收尚未完成。不得私人化或關閉原站。
+- Google來源與Microsoft SPA redirect設定已完成，Google新站登入已實際觀察；OneDrive實際登入及新站還原驗收尚未完成。不得私人化或關閉原站。
 - 每個工作批次更新此檔案，紀錄實際證據，區分 `passed`／`failed`／`not_checked`。不能因為程式寫完就勾選正式驗收完成。
 
 ### 印章介面增量（2026-11-17）
@@ -79,6 +79,86 @@
 - X／Y 位移新增滑桿，與毫米輸入雙向連動，維持原有格內限制及跨格選項。
 - 透明度與資料正規化範圍均改為0–100，既有預設96不變。
 - passed：18項單元測試、隔離手機操作、桌面寬度重開視窗、0／45／100透明度、JSON值保留及模擬OneDrive存檔；未對正式雲端資料寫入。not_checked：實體手機觸控與此增量的正式PDF下載。
+
+### 實際登入設定與備份驗收（2026-11-17）
+
+- Google Cloud 專案 `kino-quotation` 的既有 OAuth 用戶端已在頁面顯示 `https://qt.kinostudio.tw` 與 Pages 預覽來源，並有「OAuth 用戶端已儲存」通知；原3個來源保留。使用者自行完成設定，代理未重複提交。後續已觀察新站正確Google帳號登入與同步完成。
+- Microsoft Entra 已由使用者登入，已核對既有用戶端ID；依使用者當下同意只新增新站SPA回呼，清單已確認同時存在 localhost、舊GitHub站、新站三筆；未新增權限、密鑰或付費方案。
+- 目前 Edge 設定檔的舊站備份已實際下載、通過 `KinoLocalBackup.inspect` 完整性檢查：草稿、2專案、1範本、7分類、28條款、1印章，檔案1,555,844 bytes。另存專案外的私人備份目錄，不提交Git。
+- 新站初始安全副本已下載及驗證：草稿、0專案、0範本、7分類、16條款、0印章。使用者隨後自行Google登入並載入雲端，畫面顯示正確帳號及同步完成；代理未點擊同步合併或寫入。
+- 還原前已暫時登出網站Google，另下載及驗證登入後最新副本：草稿、3專案、1範本、7分類、29條款、1印章（1,562,634 bytes）。三份副本存放 `C:\Users\Aaron\Documents\Codex\QT Private Backups`，不含登入Token，不提交Git；不能代表其他裝置已備份。
+- 使用者已明確允許本機還原；準備選檔時瀏覽器回報 `Debugger unattached`。重新檢查同一頁籤及重新取得綁定各一次仍失敗，已停止UI操作。尚未點擊「還原到此瀏覽器並重新載入」或接受確認，不得宣稱已還原；下次先核對頁面及任何檔案選取對話框，不重複執行。
+- 本批次未寫入 D1／R2／OneDrive、未私人化GitHub、未停用舊站。Cloudflare CLI OAuth最近查詢回報登入失效，後續部署需重新授權；公開新站仍正常。
+
+### 下一批實際證據：還原操作與簽署儲存層
+
+- Edge重新連接成功，實際載入舊站備份並顯示來源及2專案／28條款等摘要，檢查碼正確。勾選安全副本確認後，點擊還原觸發confirm（點擊工具逾時，但接著查到confirm存在）；依既有明確授權接受confirm。之後觀察與重新取得同一頁籤均因焦點/CDP逾時失敗，停止操作。**現在還原結果未知**，不能沿用先前「尚未接受確認」的紀錄，也不能直接重做還原。需先確認實際頁面及資料數量。
+- 新增簽署儲存模組 `signing-store.js`：快照私有條件寫入、SHA-256檢查、32-byte隨機權杖僅存雜湊、工作區限定撤銷、過期拒絕。SQL使用單次條件更新取得提交權，觸發器阻擋快照／提交／已簽PDF改寫與狀態回退。
+- passed：全部25項單元測試，其中7項新簽署測試使用真正記憶體SQLite與模擬R2。not_checked：Workers本機整合、正式R2條件寫入、完整客戶HTTP／手機簽署。模組尚未接入Worker路由，不公開啟用，不算完成客戶簽署功能。
+- 本批只開發本機程式與測試；未套用正式migration、未部署Worker、未寫入既有雲端資料。下一步接入嚴格快照／圖片驗證與登入管理者API，再做客戶頁及固定PDF；不要因儲存層測試通過就直接上線。
+
+### 簽署API與圖片驗證增量
+
+- 開發分支新增 `signing-api.js`、`signing-validation.js`；Worker route以 `SIGNING_ENABLED` 預設關閉，管理者另需 `SIGNING_ALLOWED_EMAILS`。兩個正式設定均尚未啟用。
+- 管理者POST建立、GET查閱、DELETE撤銷均限定已登入的工作區；客戶GET使用Quote權杖header，只讀單份快照。客戶網域無法藉此存取同步／印章管理API。
+- 快照拒絕未知欄位、工作區覆寫、外部圖片及缺失印章；串流請求受20MB限制。圖片需先轉PNG再由隔離瀏覽器實際解碼重畫；原編輯台上傳格式不變，建立簽署介面的PNG轉換尚待接線。
+- passed：全套33項單元測試，另有本機Chromium圖片解碼測試，覆蓋損壞檔、像素上限及無外部連線。not_checked：正式Browser Run、Workers本機runtime、客戶手機提交／固定PDF。未部署或寫入正式D1／R2，未呼叫正式Browser Run。
+- 本輪未操作Edge還原；上輪接受確認後的結果仍未知，需恢復連線後先核對，不可重做還原。下一步：客戶資料／手寫／印章提交及冪等重試、客戶獨立前端、固定PDF，並補齊遷站驗收。
+- 補強驗證：Wrangler dry-run打包成功（912.10KiB，gzip171.73KiB，未部署）；另用已安裝Miniflare/workerd啟動不持久化的隔離本機D1/R2，實際通過建立／客戶讀取／撤銷、單次claim、快照／PDF欄位不可改寫、R2條件寫入及來源隔離。這補齊了此批文字快照API的Workers本機binding驗證，仍不代表正式Browser Run圖片服務、完整簽署UI或正式部署通過。
+
+### 客戶提交、產檔租約與固定檔案讀取增量
+
+- `signing-submit.js` 已完成儲存核心：明確同意與快照雜湊、只收甲方欄位及PNG簽名／印章、相同請求重試、拒絕不同提交覆寫、2分鐘租約、舊工作不得發布、PDF先存R2再以條件更新signed，以及D1不確定回應的恢復。
+- `0008_quote_signing.sql` 增加產檔租約欄位與檢查；此migration仍未套用正式D1，因此只修改尚未上線的新表定義，不對既有表做ALTER。API增加客戶／管理者已簽PDF讀取，使用報價單號檔名與固定檔案SHA-256；撤銷／過期保護客戶連結，管理者版本保留。
+- passed：核心單元測試涵蓋並發、回應遺失、R2故障、過期與撤銷；另有隔離workerd的實際D1/R2提交及重試驗證。產檔使用測試回應，不能據此宣稱真實已簽PDF版型正確。
+- **未開放HTTP送出**：正式報價版型產檔器、客戶手機頁、PNG實際驗證與送出路由仍需接線，暫存物件安全清理仍待做。不得將B3/B4/B7勾成完成或啟用正式簽署。
+- 全程未套用正式migration、未部署Worker／前端、未寫入現有雲端資料。遷站驗收與Edge還原結果仍待核對，GitHub不提前私人化。
+- 最終驗證：全套46項單元測試、本機Chromium圖片驗證、兩組隔離workerd實際D1/R2測試均通過；Worker dry-run 915.61KiB（gzip172.34KiB），沒有部署。原有PDF下載／同步測試也保留通過。
+
+### 現有版型固定PDF接線與實際產檔驗收
+
+- 編輯台新增本機快照捕捉事件，沿用原分頁器、比例、樣式及圖片，將SVG／圖片固定為PNG；沒有建立雲端連結的UI，也沒有自動送出。修復列印比例字串與API整數驗證不相容。
+- 簽署產檔沿用 `pdf-render.js`；伺服器只替換四個甲方欄位及簽名，不改金額、條款、乙方資料。過長資料在接受簽署前拒絕；已簽檔是固定PDF，不保留可編輯表單。
+- 開發分支接上HTTP送出與待簽預覽；原 `SIGNING_ENABLED` 和新增 `SIGNING_SUBMIT_ENABLED` 正式設定均未啟用。預覽快取核對SHA-256，產檔期間撤銷不能再發布預覽。
+- passed：50項單元測試、Chromium實際圖片驗證、兩組隔離workerd D1/R2測試、Worker dry-run（932.47KiB／gzip175.95KiB）。`tests/signing-render.cjs` 從真正編輯頁擷取快速／詳細版型，實際產生PDF，驗證1／2頁不增加、只有甲方文字及圖片改變、已簽檔無AcroForm；另測過長甲方資料拒絕及稅前10萬／稅後105,000金額保留。已渲染圖片檢查第一頁簽署區及詳細細項頁。原有隔離手機差異面板、Snackbar、印章操作與模擬OneDrive存檔也通過。
+- not_checked：正式Browser Run、客戶手機完整簽署、填寫後送出前預覽、正式部署。暫存安全清理、編輯台建立與客戶頁仍待完成；不宣稱簽署已上線。
+- 本批未套用正式migration、未部署正式Worker／前端、未寫入既有D1／R2／OneDrive；Edge還原結果與OneDrive新站登入仍待實際核對。
+
+### 客戶手機頁與填寫後預覽（隔離完成，未部署）
+
+- 新增獨立 `signing-client/`：甲方四欄、手寫／圖片上傳、完整PDF閱讀連結、填寫後預覽、同意確認、完成與下載。手機不依賴原生內嵌PDF；桌面另有內嵌及備援連結。全程不載入編輯台或Google／Microsoft登入。
+- 填寫後預覽沿用實際簽署產檔器，只讀D1／R2且不保存客戶圖片、不鎖定；版本不符、未知欄位、圖片錯誤、限流、產檔期間撤銷均拒絕。HTTP仍受正式關閉的簽署旗標保護。
+- 送出後以sessionStorage保留完全相同的提交與冪等鍵，支援斷線／重新整理重試；完成後清除。沒有另外保存分享權杖，不新增權限或登入需求。
+- passed：56項單元測試；隔離手機真實點擊／畫筆／上傳／預覽作廢／同意／斷線／重新整理相同請求重試／下載；手機及桌面介面截圖檢查；兩組本機workerd測試；快速／詳細實際Chromium PDF仍維持1／2頁；Worker dry-run 934.43KiB／gzip176.21KiB。
+- `build-signing-client.mjs` 只輸出五個公開檔案，含no-store／no-referrer／noindex／CSP及單份連結路由，不含編輯台、備份或憑證。未新增或部署Cloudflare Pages／DNS，未啟用正式簽署、未套用migration，也未寫入正式D1／R2／OneDrive。
+- not_checked：客戶UI＋真實Worker Browser Run的完整整合、實體手機PDF閱讀器、建立／撤銷／狀態管理介面、免費額度總量保護與安全暫存清理。這些與先前遷站還原／OneDrive驗收都仍是正式公開前的門檻。
+
+### 編輯台簽署管理與跨裝置連結重取（2026-11-18，未部署）
+
+- 手機／桌面新增受旗標控制的「客戶簽署」入口，沿用既有Google登入與JSON／binary請求工具。固定快照＋實際PDF服務預覽後，須勾選確認才可建立1–30天客戶連結；帳號變更會關閉管理視窗。
+- 管理者清單每頁25筆，限定工作區、不讀整批R2快照；支援狀態整理、取得／複製客戶連結、下載已簽檔、二次確認撤銷。建立回應遺失時先讀取清單核對，不讓原按鈕盲目重送。
+- 新建API連結改用Worker Secret的HMAC-SHA-256＋隨機UUID產生，D1仍只存雜湊；管理者可在另一裝置重取同一連結。金鑰未設定則拒絕建立。只修改尚未正式套用的0008新增表定義，加入不可變報價單號供清單使用；沒有ALTER／清洗舊表。
+- passed：58項單元測試、隔離手機／桌面管理者UI流程（含回應遺失）、既有客戶簽署UI、手機差異面板與模擬OneDrive回歸、兩組隔離workerd D1/R2測試（含清單與重取連結）、快速／詳細實際Chromium PDF及渲染檢查。Worker dry-run 936.69KiB／gzip176.85KiB。
+- not_checked：管理者＋客戶＋實際Worker Browser Run完整整合、實體手機、正式Secret與免費總額度保護、安全暫存清理；遷站本機還原結果及OneDrive新站真實登入仍待核對。這些仍是公開與GitHub私人化前的門檻。
+- 本輪未設定正式Secret、未套用正式migration、未部署Worker或前端、未變更正式D1／R2／OneDrive資料。
+
+### 共用瀏覽器預算保護（2026-11-18，未部署）
+
+- 一般PDF、快照圖片驗證、客戶預覽／簽後PDF統一使用請求內的 `createBudgetBrowserSession`；快取、已簽下載及無需產檔的重試不耗用瀏覽器預算。
+- 新增獨立0009額度表：UTC每日8分鐘保守預算、每次先預留120秒、一次一個工作、啟動間隔25秒、45秒看門狗；確認關閉才退回未用額度（加15秒餘裕），無法確認則保留預留。舊工作不能結算新租約，跨日也不能繞過仍有效的工作。
+- 額度／儲存異常會在啟動前拒絕，不偷偷繞過或升級方案。管理者遇確定429可保留已核對預覽等待重試；建立結果不確定仍需查清單。
+- passed：67項單元測試、管理者手機／桌面及客戶手機模擬流程；兩組隔離workerd測試，含新額度表及HTTP PDF超額429。Worker dry-run940.77KiB／gzip178.01KiB。
+- [browser-budget.md](browser-budget.md) 記錄政策、不是實際帳單秒數的限制，以及必須先新增額度表才部署Worker的順序。其他同帳號服務用量不在此保護內；正式Free方案／帳號額度、Browser Run真實關閉、完整整合與遷站驗收仍待核對。
+- 本輪沒有呼叫正式Browser Run、設定計費或Secret、套用正式migration、部署正式站，亦未修改現有D1／R2／OneDrive資料。0008／0009都尚未套用正式D1。
+- 後續唯讀預檢：Wrangler whoami已成功，先前CLI OAuth失效不再是目前阻礙。正式D1查詢sqlite_master僅找到d1_migrations，沒有quote_signing_requests／quote_browser_budget；回應rows_written=0、changed_db=false。Edge頁籤仍存在，但以ID及URL重新取得均回報Emulation.setFocusEmulationEnabled逾時；已停止UI操作並請使用者重新連接。Free方案畫面、新站還原與OneDrive真實登入仍不能宣稱驗收完成。
+
+### 編輯台到客戶的隔離完整串接（2026-11-18，未部署）
+
+- 新增 `tests/signing-e2e.cjs`：使用實際桌面編輯台與390×844手機客戶頁，串接真實管理者／客戶API handler、原始SQLite狀態轉移及觸發器、模擬R2與本機Chromium，不再只回傳假的PDF位元組。
+- passed：快速手寫／詳細印章完整流程；待簽建立後修改草稿不回寫；預覽不寫入；第一次最終產檔失敗後保留提交、重新整理同冪等鍵重試成功；甲乙雙方下載位元組與D1雜湊相同；撤銷後客戶被拒但管理者固定檔保留。PDF文字包含甲方、固定條款、稅前10萬及稅後105,000，不包含後續草稿改動；頁數1／2、已簽檔無表單，三頁渲染檢查完成。
+- 測試資料與產物均隔離；原專案sentinel資料不變、客戶僅呼叫簽署端點、未POST原有同步資料。原有67項單元測試仍通過。測試遇到字型的相容漢字部首，文字比對以NFKC正規化，未為了測試改動正式PDF文字。
+- not_checked：真實Google身分、正式Cloudflare Browser Run／CORS外層與本批完整UI的整體驗收；這些仍須與既有API／workerd測試分開看待。Edge重連、正式Free方案及本機還原／OneDrive驗收也仍待完成，不提前私人化GitHub。
+- 本輪未部署、未套用正式migration、未建立Secret，未寫入正式D1／R2／OneDrive或呼叫正式Browser Run。
 
 ## 自動續作
 

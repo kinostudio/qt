@@ -1,0 +1,34 @@
+# 客戶簽署發布紀錄（2026-11-18）
+
+## 使用者指示與來源
+
+使用者明確更正：現在接通並上線 quote.kinostudio.tw，不是延後簽署開發。既有編輯台保持 qt.kinostudio.tw；不清空 D1／R2、不混用官網、不升級免費方案。
+
+從正式66bd363建立codex/quote-signing-release，合併4ccfcb1的既有簽署／額度功能；原開發工作樹及未提交修改未動。兩個衝突檔保留OneDrive綁定、錯誤代碼、雲端整合面板與新版導航，同時加入簽署旗標與管理入口。
+
+## 已完成
+
+- 89/89單元測試；客戶五檔建置白名單；Windows換行測試改為比對trim後內容，不改路由。
+- 真實編輯台＋手機客戶頁＋handler＋SQLite＋模擬R2＋本機Chromium：快速手寫／詳細印章、不可變快照、產檔失敗重試、甲乙下載SHA一致、撤銷後保留管理者歸檔皆通過。
+- 真正workerd臨時D1/R2：建立／讀取／撤銷、原子claim、不可變觸發器、R2條件寫入、來源隔離、送出重試通過。首次esbuild受沙箱上層目錄權限阻擋，經核准的同一隔離測試重跑通過；沒有修改測試來繞過驗證。
+- 管理者手機／桌面UI、新雲端面板、既有手機同步差異／Snackbar／印章／序列化OneDrive／備份還原與真實handler的OneDrive模擬存檔回歸通過。
+- 獨立Pages kino-quotation-signing建立並部署72f91625，來源只含index.html、app.js、app.css、_headers、_redirects。正式pages.dev根路由、/s/<測試字串>、app.js皆200且含no-store／no-referrer／noindex／CSP。
+- 自訂網域quote.kinostudio.tw已在該Pages專案登錄，仍待CNAME接線。沒有修改官網或qt記錄。
+- 先備份D1至儲存庫外私人目錄d1-before-signing-enable-20261118.sql：987480 bytes，SHA256 20c3d96022d90734d2904e8a5594597131056732ad43a429c6ae8dc0181bf812；實際記憶體SQLite載入成功。資料原有3專案、29條款、1個OneDrive綁定。
+- 只套用已列出的0008_quote_signing.sql與0009_browser_budget.sql。後備份d1-after-signing-migration-20261118.sql與遷移前15張舊表逐列排序雜湊比對完全一致；新簽署／額度表均0筆。備份不可加入Git。
+- 新SIGNING_LINK_SECRET以32-byte隨機值直接經stdin存入既有Worker；未輸出／寫入檔案或Git，也未輪替Google／OneDrive金鑰。
+- 既有QT Worker部署c083417f-2968-4cc2-a877-d809648a2be4；SIGNING_ENABLED=false、SIGNING_SUBMIT_ENABLED=false，管理者白名單kinostudio.tw@gmail.com。health200、Google／OneDrive原有設定保留、OneDrive綁定旗標true；客戶來源對/api/sync的OPTIONS為403。
+
+## 非預期部署與恢復
+
+Wrangler pages project create在此版本非預期委派為Worker部署，曾新建同名kino-quotation-signing Worker（3483cf36-587b-4e0e-a856-cb744653b2ac），而非靜態Pages。立即停止後續步驟並以精確名稱移除此批新Worker，未刪D1／R2或原kino-quotation-data-api；其程式可由Git恢復，不保留重複公開API。之後使用既有Wrangler OAuth的官方Pages REST API明確建立Pages，正常pages deploy成功。不能把誤建Worker當成客戶站已完成。
+
+## 阻礙與待辦
+
+- OAuth具有Pages寫入但沒有DNS編輯權限；quote目前無DNS紀錄。已一次請使用者新增CNAME quote → kino-quotation-signing.pages.dev，保留@／www／qt／api／review。
+- Windows Edge當前為其他專案頁面；安全審查拒絕讀取其完整可及性樹，避免暴露非本任務私人內容。未重試或繞過拒絕，也未讀取瀏覽器Token／建立假的正式Google使用者。
+- DNS驗證與HTTPS就緒後，才啟用兩個簽署旗標並完成正式隔離待簽版本→客戶填寫／手寫或上傳→預覽→確認→固定PDF→雙方下載驗收。尚未做真實Google帳號與正式Browser Run完整驗收，不能宣稱整體已可用。
+- 現有R2暫存物件採保守保留，不做自動刪除；後續依D1引用、前綴與保留期獨立審核清理，不能依錯誤訊息推定物件可刪。此次沒有清理任何既有物件。
+- 一般PDF與簽署共用8分鐘保守應用預算；不是帳戶實際帳單用量，也不能保證其他產品永不收費。沿用已確認的Workers Free，不升級。
+
+程式部署與資料表就緒不等於客戶簽署正式驗收。舊aaronkino/qt已依使用者指示私人化，新kinostudio/qt仍公開；本次不再變更可見性。

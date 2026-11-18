@@ -1,7 +1,10 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readPdfPayload, renderPrintPdf, PRINT_FONT_URL } from './pdf-render.js';
+import {createBudgetBrowserSession} from './browser-budget.js';
 import { guardSql } from './sync-guard.js';
 import { handleOneDriveBinding, isOneDriveBindingEnabled, OneDriveBindingError } from './onedrive-binding.js';
+import { SigningError } from './signing-store.js';
+import { handleSigningGuest, handleSigningOwner, isSigningGuestPath } from './signing-api.js';
 import { Buffer } from 'node:buffer';
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -32,6 +35,10 @@ const getCorsHeaders = (request, env) => {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+
+  if (isSigningGuestPath(new URL(request.url).pathname) && env.SIGNING_ENABLED === 'true') {
+    allowedOrigins.push('https://quote.kinostudio.tw');
+  }
 
   if (!allowedOrigins.includes(origin)) return {};
 
@@ -873,10 +880,16 @@ const routeRequest = async (request, env) => {
       microsoftClientId: env.MICROSOFT_CLIENT_ID || "",
       oneDriveLoginEnabled: Boolean(env.MICROSOFT_CLIENT_ID),
       oneDriveBindingEnabled: isOneDriveBindingEnabled(env),
+      signingEnabled: env.SIGNING_ENABLED === 'true',
     });
   }
   if (request.method === "POST" && url.pathname === "/api/auth/google") {
     return googleLogin(request, env);
+  }
+
+  if (url.pathname === '/api/signing' || url.pathname.startsWith('/api/signing/')) {
+    if (env.SIGNING_ENABLED !== 'true') throw new SigningError('客戶簽署尚未啟用',404);
+    if (isSigningGuestPath(url.pathname)) return handleSigningGuest(request,env);
   }
 
   const auth = await getAuthContext(request, env);
@@ -902,6 +915,7 @@ const routeRequest = async (request, env) => {
 
   const workspaceId = auth.workspaceId;
   if (url.pathname === '/api/onedrive' || url.pathname.startsWith('/api/onedrive/')) return handleOneDriveBinding(request, env, auth);
+  if (url.pathname === '/api/signing' || url.pathname.startsWith('/api/signing/')) return handleSigningOwner(request,env,auth);
   if (request.method === 'POST' && url.pathname === '/api/pdf') {
     const allowedEmails = String(env.PDF_ALLOWED_EMAILS || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
     if (!allowedEmails.includes(String(auth.user.email || '').toLowerCase())) throw new ApiError('此帳號尚未開通 PDF 下載。', 403);
@@ -912,23 +926,23 @@ const routeRequest = async (request, env) => {
     let payload;
     try { payload = await readPdfPayload(request); }
     catch (error) { throw new ApiError(error.message === 'PDF_PAYLOAD_TOO_LARGE' ? 'PDF 內容超過 12 MB，請縮小圖片。' : 'PDF 內容格式不正確', error.message === 'PDF_PAYLOAD_TOO_LARGE' ? 413 : 400); }
-    const { default: puppeteer } = await import('@cloudflare/puppeteer');
-    let browser;
+    const budget=createBudgetBrowserSession(env);
     try {
+      const browser = await budget.browser();
       const font = await fetch(PRINT_FONT_URL, { signal: AbortSignal.timeout(15000), cf: { cacheTtl: 86400 } });
       if (!font.ok) throw new Error('PRINT_FONT_UNAVAILABLE');
       const fontSource = 'data:font/ttf;base64,' + Buffer.from(await font.arrayBuffer()).toString('base64');
-      browser = await puppeteer.launch(env.PDF_BROWSER, { keep_alive: 10000 });
       const page = await browser.newPage();
       const {bytes,fields} = await renderPrintPdf(page, payload, fontSource);
       const filename = String(payload.quotationId || 'quotation').trim().replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').slice(0, 180) + '.pdf';
       return new Response(bytes, { headers: { 'content-type': 'application/pdf', 'content-disposition': `attachment; filename="quotation.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`, 'cache-control': 'no-store', 'x-pdf-client-fields':Buffer.from(JSON.stringify(fields)).toString('base64'), 'access-control-expose-headers':'x-pdf-client-fields' } });
     } catch (error) {
+      if(error instanceof SigningError)throw error;
       // Do not log submitted HTML, seal images, or project contents.
       console.error('PDF_RENDER_FAILED', error?.name || 'Error');
       throw new ApiError('PDF 轉檔暫時無法完成或今日額度已用完，請使用列印另存 PDF。', 503);
     } finally {
-      if (browser) await browser.close().catch(() => {});
+      await budget.close();
     }
   }
 
@@ -1318,15 +1332,16 @@ export default {
       return securedResponse;
     } catch (error) {
       const status =
-        error instanceof ApiError || error instanceof OneDriveBindingError ? error.status : 500;
-      if (!(error instanceof ApiError) && !(error instanceof OneDriveBindingError)) {
+        error instanceof ApiError || error instanceof OneDriveBindingError || error instanceof SigningError ? error.status : 500;
+      if (!(error instanceof ApiError) && !(error instanceof OneDriveBindingError) && !(error instanceof SigningError)) {
         if (new URL(request.url).pathname.startsWith('/api/onedrive')) console.error('ONEDRIVE_API_FAILED', error?.name || 'Error');
+        else if (new URL(request.url).pathname.startsWith('/api/signing')) console.error('SIGNING_API_FAILED',error?.name||'Error');
         else console.error(error);
       }
       const message =
         error?.message === "PAYLOAD_TOO_LARGE"
           ? "同步資料超過大小上限"
-          : error instanceof ApiError || error instanceof OneDriveBindingError
+          : error instanceof ApiError || error instanceof OneDriveBindingError || error instanceof SigningError
             ? error.message
             : "伺服器處理失敗";
       return json({ error: message, ...(error instanceof OneDriveBindingError && error.code ? {code:error.code} : {}) }, status, {...corsHeaders,'cache-control':'no-store','x-content-type-options':'nosniff'});

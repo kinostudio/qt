@@ -43,6 +43,9 @@
     <script src="./assets/pdf-export.js" defer></script>
     <script src="./assets/pdf-form.js" defer></script>
     <script src="./assets/local-backup.js" defer></script>
+    <script src="./assets/signing-export.js" defer></script>
+    <script src="./assets/signing-manager.js" defer></script>
+    <link rel="stylesheet" href="./assets/signing-manager.css">
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Noto+Sans+CJK+TC:wght@400;500;700&display=swap');
@@ -2963,6 +2966,7 @@
             const [cloudConfigReady, setCloudConfigReady] = useState(false);
             const [verifiedGoogle, setVerifiedGoogle] = useState(null);
             const [oneDriveNeedsReconnect, setOneDriveNeedsReconnect] = useState(false);
+            const [signingEnabled, setSigningEnabled] = useState(false);
             const [cloudAuthUser, setCloudAuthUser] = useState(() => {
                 try { return JSON.parse(sessionStorage.getItem(CLOUD_AUTH_USER_STORAGE_KEY) || 'null'); }
                 catch { return null; }
@@ -3487,6 +3491,21 @@
                 window.addEventListener('quotation-download-pdf', download);
                 return () => window.removeEventListener('quotation-download-pdf', download);
             }, [data, stampAssets, printScale]);
+            useEffect(() => {
+                const capture=async event=>{
+                    if(typeof event.detail?.resolve!=='function' || typeof event.detail?.reject!=='function') return;
+                    const previousScale=printScaleRef.current;
+                    try {
+                        await document.fonts.load('12px KinoPrintTC');await document.fonts.ready;
+                        printScaleRef.current=normalizePrintScaleValue(event.detail.scale||printScale);
+                        preparePrintPagination();
+                        event.detail.resolve(await window.KinoSigningExport.capture(data,stampAssets,document.querySelector('.print-pagination-root'),printScaleRef.current));
+                    } catch(error) {event.detail.reject(error);}
+                    finally {printPaginationCleanupRef.current?.();printScaleRef.current=previousScale;}
+                };
+                window.addEventListener('quotation-signing-snapshot',capture);
+                return ()=>window.removeEventListener('quotation-signing-snapshot',capture);
+            },[data,stampAssets,printScale]);
             const handlePrintScaleChange = value => {
                 const nextScale = normalizePrintScaleValue(value);
                 setPrintScale(nextScale);
@@ -3657,16 +3676,21 @@
                 }
                 return response.json();
             };
-            const cloudBinaryRequest = async path => {
+            const cloudBinaryRequest = async (path,options={}) => {
                 const syncKey = getCloudSyncKey();
                 if (!syncKey) throw new Error('SYNC_CANCELLED');
-                const response = await fetch(`${CLOUD_SYNC_API_URL}${path}`, { headers: { authorization: `Bearer ${syncKey}` } });
+                const response = await fetch(`${CLOUD_SYNC_API_URL}${path}`, { ...options,headers: { authorization: `Bearer ${syncKey}`,...(options.headers||{}) } });
                 if (!response.ok) {
                     const body = await response.json().catch(() => ({}));
                     throw new Error(body.error || `印章載入失敗 (${response.status})`);
                 }
                 return response.blob();
             };
+            const openSigningManager = () => {
+                if(!getCloudSyncKey()){setShowCloudKeyModal(true);return;}
+                window.KinoSigningManager.open({request:cloudRequest,binary:cloudBinaryRequest});
+            };
+            useEffect(()=>{window.KinoSigningManager?.close();},[cloudAuthUser?.email]);
             const blobToDataUrl = blob => new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onerror = () => reject(new Error('印章圖片轉換失敗'));
@@ -3861,6 +3885,7 @@
                             setOneDriveAutoSave(localStorage.getItem(ONEDRIVE_AUTOSAVE_STORAGE_KEY) === 'true');
                         }
                         setCloudConfigReady(true);
+                        setSigningEnabled(config.signingEnabled===true);
                     })
                     .catch(error => console.warn('Cloud config load error', error));
             }, []);
@@ -4959,6 +4984,7 @@
 
                     <div id="desktop-root" style={{ display: mode === 'desktop' ? 'block' : 'none' }}>
                         <DesktopView 
+                            signingEnabled={signingEnabled} openSigningManager={openSigningManager}
                             data={data} setData={setData} updateField={updateField} calcs={calculations} compressImage={compressImage} stampAssets={stampAssets} onStampAssetsChange={handleStampAssetsChange}
                             handleOpen={handleOpen} handleSave={handleSave} handleSaveAs={handleSaveAs} handleReset={handleReset} handleManualSave={handleManualSave}
                             openClausePicker={() => setShowClausePicker(true)}
@@ -4985,6 +5011,7 @@
                     
                     <div id="mobile-root" style={{ display: mode === 'mobile' ? 'block' : 'none' }}>
                         <MobileView 
+                            signingEnabled={signingEnabled} openSigningManager={openSigningManager}
                             data={data} setData={setData} updateField={updateField} calcs={calculations} compressImage={compressImage} stampAssets={stampAssets} onStampAssetsChange={handleStampAssetsChange}
                             handleOpen={handleOpen} handleSave={handleSave} handleSaveAs={handleSaveAs} handleReset={handleReset} mode={mode}
                             openClausePicker={() => setShowClausePicker(true)}
@@ -5116,7 +5143,7 @@
                                             <tr><th>電話</th><td data-pdf-client-field="clientPhone">{data.signature.clientPhone || '　'}</td><td>{data.signature.vendorPhone || '　'}</td></tr>
                                             <tr>
                                                 <th>簽署</th>
-                                                <td><div className="quick-acceptance-signature">{data.signature.clientSigImg ? <img src={data.signature.clientSigImg} alt="甲方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.clientStamp} asset={stampAssets.find(asset => asset.id === data.signature.clientStamp?.assetId)} /></div></div></td>
+                                                <td><div data-signing-client-signature="true" className="quick-acceptance-signature">{data.signature.clientSigImg ? <img src={data.signature.clientSigImg} alt="甲方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.clientStamp} asset={stampAssets.find(asset => asset.id === data.signature.clientStamp?.assetId)} /></div></div></td>
                                                 <td><div className="quick-acceptance-signature">{data.signature.vendorSigImg ? <img src={data.signature.vendorSigImg} alt="乙方簽名" /> : <span className="quick-acceptance-signature-placeholder">簽章</span>}<div className="stamp-layer-root"><StampVisual stamp={data.signature.vendorStamp} asset={stampAssets.find(asset => asset.id === data.signature.vendorStamp?.assetId)} /></div></div></td>
                                             </tr>
                                             {data.printSettings.showSigDate && <tr><th>日期</th><td colSpan="2">{data.signature.signatureDate || '　　　　'}</td></tr>}
@@ -5131,7 +5158,7 @@
             );
         };
 
-        const DesktopView = ({ data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, handleManualSave, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, saveOneDrive, oneDriveNeedsReconnect, oneDriveBindingEnabled, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
+        const DesktopView = ({ signingEnabled, openSigningManager, data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, handleManualSave, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, saveOneDrive, oneDriveNeedsReconnect, oneDriveBindingEnabled, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
             const handleLogoUpload = async (e) => { if (e.target.files[0]) { const base64 = await compressImage(e.target.files[0]); setData(prev => ({ ...prev, logo: base64 })); } };
             const [draggedNoteId, setDraggedNoteId] = useState(null);
             const [dragOverNoteId, setDragOverNoteId] = useState(null);
@@ -5182,6 +5209,7 @@
                                 <div className="qt-toolbar-panel-inner">
                                     <div className="flex min-h-[3.25rem] flex-wrap items-center justify-end gap-2 border-t border-gray-100 py-2">
                                         <CloudAccountControls onSync={syncCloudData} onManage={openCloudAuth} onDataManager={openDataManager} status={cloudSyncStatus} authUser={cloudAuthUser} onOneDrive={openOneDrive} onSaveOneDrive={saveOneDrive} account={oneDriveAccount} folder={oneDriveFolder} autoSave={oneDriveAutoSave} driveStatus={oneDriveStatus} needsReconnect={oneDriveNeedsReconnect} bindingMode={oneDriveBindingEnabled} />
+                                        {signingEnabled && <button type="button" onClick={openSigningManager} className="qt-toolbar-control qt-toolbar-button border border-kino/30 text-kino"><i className="fas fa-pen-nib"></i>客戶簽署</button>}
                                         <PrintSplitButton value={printScale} onChange={onPrintScaleChange} onPrint={handlePrint} />
                                     </div>
                                 </div>
@@ -5429,7 +5457,7 @@
             );
         };
 
-        const MobileView = ({ data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, saveOneDrive, oneDriveNeedsReconnect, oneDriveBindingEnabled, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
+        const MobileView = ({ signingEnabled, openSigningManager, data, setData, updateField, calcs, compressImage, stampAssets = [], onStampAssetsChange, handleOpen, handleSave, handleSaveAs, handleReset, openClausePicker, syncCloudData, cloudSyncStatus, cloudAuthUser, openCloudAuth, openOneDrive, saveOneDrive, oneDriveNeedsReconnect, oneDriveBindingEnabled, oneDriveAccount, oneDriveFolder, oneDriveAutoSave, oneDriveStatus, openDataManager, applyPaymentTemplate, handlePrint, printScale, onPrintScaleChange, mode, undo, redo, canUndo, canRedo }) => {
             const [draggingIdx, setDraggingIdx] = useState(null);
             // [v1.08 Change] Animation Lock to prevent double-click race conditions
             const [isAnimating, setIsAnimating] = useState(false);
@@ -5606,6 +5634,7 @@
                                         <CloudAccountControls onSync={syncCloudData} onManage={openCloudAuth} onDataManager={openDataManager} status={cloudSyncStatus} authUser={cloudAuthUser} onOneDrive={openOneDrive} onSaveOneDrive={saveOneDrive} account={oneDriveAccount} folder={oneDriveFolder} autoSave={oneDriveAutoSave} driveStatus={oneDriveStatus} needsReconnect={oneDriveNeedsReconnect} bindingMode={oneDriveBindingEnabled} compact={true} />
                                         <PrintSplitButton value={printScale} onChange={onPrintScaleChange} onPrint={handlePrint} fullWidth={true} />
                                     </div>
+                                    {signingEnabled && <button type="button" onClick={openSigningManager} className="qt-toolbar-control qt-toolbar-button border border-kino/30 text-kino"><i className="fas fa-pen-nib"></i>客戶簽署</button>}
                                 </div>
                             </div>
                         </div>

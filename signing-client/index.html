@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <title>報價確認與簽署｜KINO STUDIO</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><strong>KINO STUDIO</strong><span>報價確認與簽署</span></header>
+  <main>
+    <p id="notice" role="status" aria-live="polite">正在讀取報價…</p>
+    <section id="quote" hidden aria-labelledby="quote-title">
+      <p class="eyebrow">QUOTATION / 固定報價版本</p>
+      <h1 id="quote-title"></h1><p id="quote-meta"></p>
+      <button id="original" type="button">閱讀完整待簽報價 PDF</button>
+      <p class="hint">這份報價不會隨報價方的草稿變動。請閱讀完整金額、條款與付款方式，再填寫簽署資料。連結請勿轉傳。</p>
+    </section>
+    <form id="form" hidden>
+      <section aria-labelledby="party-title">
+        <h2 id="party-title">1. 填寫甲方資料</h2>
+        <div class="fields">
+          <label>公司／抬頭<input name="clientCompany" maxlength="200" autocomplete="organization"></label>
+          <label>姓名／代表人<input name="clientContact" maxlength="200" autocomplete="name"></label>
+          <label>統一編號<input name="clientTaxId" maxlength="200" inputmode="numeric"></label>
+          <label>聯絡電話<input name="clientPhone" maxlength="200" inputmode="tel" autocomplete="tel"></label>
+        </div>
+        <p class="hint">公司／抬頭或姓名至少填寫一項；資料只用於本份報價。</p>
+      </section>
+      <section aria-labelledby="signature-title">
+        <h2 id="signature-title">2. 簽名或印章</h2>
+        <div class="modes" role="group" aria-label="簽署方式">
+          <button id="handwritten" type="button" aria-pressed="true">手寫簽名</button>
+          <button id="stamp" type="button" aria-pressed="false">上傳簽名／印章</button>
+        </div>
+        <div id="draw-area"><p class="hint">用手指、觸控筆或滑鼠在下方簽名。</p>
+          <canvas id="canvas" width="900" height="320" aria-label="手寫簽名區"></canvas>
+          <button id="clear" type="button" class="secondary">清除重簽</button>
+        </div>
+        <div id="upload-area" hidden>
+          <label>選擇圖片<input id="file" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <p class="hint">PNG、JPG 或 WebP，最大 8 MB；透明背景的印章效果較好。</p>
+          <img id="stamp-image" alt="上傳簽名或印章預覽" hidden>
+        </div>
+      </section>
+      <button id="preview" type="submit">3. 預覽填寫後的報價</button>
+      <p class="hint">預覽不代表完成簽署，也不會儲存或鎖定你的簽名。</p>
+    </form>
+    <section id="review" hidden aria-labelledby="review-title">
+      <h2 id="review-title">確認簽署內容</h2>
+      <p>請核對 PDF 中的甲方資料、簽名、金額與條款。修改任何資料後，須重新預覽。</p>
+      <a id="open-pdf" target="_blank" rel="noopener noreferrer">開啟完整 PDF 預覽</a>
+      <p class="hint">手機請點上方連結閱讀完整 PDF，再回到此頁確認。電腦若無法顯示下方預覽，也可使用此連結。</p>
+      <iframe id="pdf" title="報價 PDF 預覽"></iframe>
+      <label class="consent"><input id="consent" type="checkbox">我已閱讀並確認本份報價與條款，同意以這份簽名／印章完成簽署。送出後不可修改。</label>
+      <p class="hint">送出時會在此瀏覽器分頁暫存本次資料，以便斷線重試；成功後自動清除。請勿使用他人共用的裝置簽署。</p>
+      <button id="confirm" type="button" disabled>確認簽署並送出</button>
+    </section>
+    <section id="retry" hidden><h2>簽署處理中</h2><p>已保留本次送出內容；若網路中斷，請重試原內容，不要重新簽署。此分頁暫存會在成功後清除。</p><button id="retry-submit" type="button">查詢／重試本次送出</button></section>
+    <section id="done" hidden><h2>簽署已完成</h2><p>這份已簽 PDF 已固定保存，雙方下載的內容相同。</p><button id="download" type="button">下載已簽 PDF／列印</button><p class="hint">請下載留存。開啟 PDF 後可使用閱讀器的列印功能。本流程不是憑證式數位簽章。</p></section>
+  </main>
+  <footer>奇諾影像｜僅限本份報價簽署，不需登入 Google 或 Microsoft。</footer>
+</body>
+</html>

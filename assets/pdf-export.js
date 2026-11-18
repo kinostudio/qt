@@ -1,8 +1,13 @@
 /* Serialize the browser's existing print pages; Chromium renders the PDF. */
 (() => {
     'use strict';
-    async function inlineImage(source, target) {
+    async function inlineImage(source, target, rasterize) {
         await source.decode();
+        if(rasterize) {
+            if(!source.naturalWidth || !source.naturalHeight || source.naturalWidth>4096 || source.naturalHeight>4096 || source.naturalWidth*source.naturalHeight>4000000) throw new Error('圖片尺寸超過簽署上限。');
+            const canvas=document.createElement('canvas');canvas.width=source.naturalWidth;canvas.height=source.naturalHeight;
+            canvas.getContext('2d').drawImage(source,0,0);target.src=canvas.toDataURL('image/png');target.removeAttribute('srcset');return;
+        }
         if (source.currentSrc.startsWith('data:')) { target.src = source.currentSrc; return; }
         const response = await fetch(source.currentSrc);
         if (!response.ok) throw new Error('報價圖片載入失敗');
@@ -15,11 +20,11 @@
         });
         target.removeAttribute('srcset');
     }
-    async function serialize(root, quotationId) {
+    async function serialize(root, quotationId, options={}) {
         const copy = root.cloneNode(true);
         copy.classList.remove('print-pagination-measuring');
         copy.style.cssText = '';
-        await Promise.all([...root.querySelectorAll('img')].map((image, index) => inlineImage(image, copy.querySelectorAll('img')[index])));
+        await Promise.all([...root.querySelectorAll('img')].map((image, index) => inlineImage(image, copy.querySelectorAll('img')[index],options.rasterizeImages===true)));
         const sources = root.querySelectorAll('input,textarea,select');
         copy.querySelectorAll('input,textarea,select').forEach((field, index) => {
             const source = sources[index];

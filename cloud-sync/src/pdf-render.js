@@ -29,7 +29,7 @@ export function createPrintDocument({ html, css }, fontSource = PRINT_FONT_URL) 
   return `<!doctype html><html lang="zh-TW" class="print-pagination-active"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data: https://qt.kinostudio.tw; script-src 'none'; frame-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'"><style>${css.replace(/@import\s+[^;]+;/gi, '')}</style><style>@font-face{font-family:KinoPrintTC;src:url('${fontSource}') format('truetype');font-weight:400;font-display:block}.print-pagination-root,.print-pagination-root input,.print-pagination-root textarea,.print-pagination-root select{font-family:KinoPrintTC,sans-serif!important}html,body{margin:0;padding:0;background:white}body{width:194mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}</style></head><body>${html}</body></html>`;
 }
 
-export async function renderPrintPdf(page, payload, fontSource = PRINT_FONT_URL) {
+export async function preparePrintPage(page, payload, fontSource = PRINT_FONT_URL) {
   await page.setJavaScriptEnabled(false);
   const width = Math.min(2560, Math.max(320, Math.round(Number(payload.viewportWidth) || 1200)));
   await page.setViewport({ width, height: 1600, deviceScaleFactor: 1 });
@@ -46,6 +46,11 @@ export async function renderPrintPdf(page, payload, fontSource = PRINT_FONT_URL)
   });
   const count = await page.$$eval('.print-page', pages => pages.length);
   if (!count || count > 20) throw new Error('PDF_PAGE_LIMIT');
+}
+
+export async function renderPrintPdf(page, payload, fontSource = PRINT_FONT_URL, prepareFields) {
+  await preparePrintPage(page,payload,fontSource);
+  if(prepareFields) await prepareFields(page);
   const fields = payload.editableClientFields === true ? await page.evaluate(() => {
     const pt=72/96, margin=8*72/25.4, pageHeight=297*72/25.4;
     return [...document.querySelectorAll('.print-page')].flatMap((page,pageIndex)=>{
