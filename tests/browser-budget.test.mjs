@@ -25,7 +25,7 @@ test('lazy browser is launched once and a confirmed close refunds with a safety 
   assert.equal(f.row(),undefined);assert.equal(await session.browser(),await session.browser());
   now+=3000;await session.close();await session.close();
   assert.equal(launches,1);assert.equal(closes,1);assert.equal(f.row().used_ms,18000);assert.equal(f.row().lease_id,null);
-  await assert.rejects(reserveBrowserBudget(f.env,now),e=>e.status===429);
+  await assert.rejects(reserveBrowserBudget(f.env,now),e=>e.status===429&&e.retryAfter===22&&/啟動間隔/.test(e.message));
   assert.ok(await reserveBrowserBudget(f.env,start+25000));
 });
 
@@ -35,6 +35,12 @@ test('unknown launch or close failures keep the entire reservation and lease',as
     if(stage==='launch')await assert.rejects(session.browser(),/launch failed/);else await session.browser();
     await session.close();assert.equal(f.row().used_ms,120000);assert.ok(f.row().lease_id);assert.equal(f.row().lease_until,start+120000);
   }
+});
+
+test('active render lease reports its remaining wait without changing the reservation',async t=>{
+  const f=fixture(t);await reserveBrowserBudget(f.env,start);
+  await assert.rejects(reserveBrowserBudget(f.env,start+20000),e=>e.status===429&&e.retryAfter===100&&/另一個產檔工作/.test(e.message));
+  assert.equal(f.row().used_ms,120000);assert.equal(f.row().lease_until,start+120000);
 });
 
 test('daily budget exhaustion or missing quota storage fails before browser acquisition',async t=>{

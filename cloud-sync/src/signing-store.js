@@ -2,7 +2,7 @@ const DAY_MS = 86400000;
 const MAX_SNAPSHOT_BYTES = 20 * 1024 * 1024;
 
 export class SigningError extends Error {
-  constructor(message, status = 400) { super(message); this.status = status; }
+  constructor(message, status = 400, retryAfter) { super(message); this.status = status; if(Number.isInteger(retryAfter) && retryAfter>0)this.retryAfter=retryAfter; }
 }
 
 export const SIGNING_SQL = Object.freeze({

@@ -1344,7 +1344,8 @@ export default {
           : error instanceof ApiError || error instanceof OneDriveBindingError || error instanceof SigningError
             ? error.message
             : "伺服器處理失敗";
-      return json({ error: message, ...(error instanceof OneDriveBindingError && error.code ? {code:error.code} : {}) }, status, {...corsHeaders,'cache-control':'no-store','x-content-type-options':'nosniff'});
+      const retryAfter=error instanceof SigningError ? error.retryAfter : undefined;
+      return json({ error: message, ...(retryAfter ? {retryAfter} : {}), ...(error instanceof OneDriveBindingError && error.code ? {code:error.code} : {}) }, status, {...corsHeaders,'cache-control':'no-store','x-content-type-options':'nosniff',...(retryAfter ? {'retry-after':String(retryAfter)} : {})});
     }
   },
 };

@@ -43,7 +43,12 @@ const root=path.resolve(__dirname,'..'),origin='https://qt.kinostudio.tw',api='h
       const trigger=()=>page.getByRole('button',{name:'雲端與帳號',exact:true}).filter({visible:true});
       const open=async()=>{await trigger().click();await page.getByRole('dialog',{name:'雲端與帳號設定',exact:true}).waitFor();};
       await page.goto(origin+'/',{waitUntil:'domcontentloaded'});
+      const arrow=trigger().locator('svg');
+      assert.equal(await arrow.getAttribute('aria-hidden'),'true');
+      assert.ok(!(await arrow.getAttribute('class')).includes('rotate-180'));
+      const arrowBox=await arrow.boundingBox();assert.equal(arrowBox.width,16);assert.equal(arrowBox.height,16);
       await open();
+      assert.ok((await arrow.getAttribute('class')).includes('rotate-180'));
       await page.getByText('已綁定・尚未選資料夾',{exact:true}).waitFor();
       await page.getByText('google@example.invalid',{exact:true}).waitFor();
       await page.getByText('drive@example.invalid',{exact:true}).waitFor();

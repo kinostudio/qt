@@ -22,7 +22,10 @@ export async function reserveBrowserBudget(env,now=Date.now()) {
   } catch {throw new SigningError('瀏覽器額度保護尚未就緒，請先使用列印另存 PDF。',503);}
   if(!row) {
     if(current?.day===day && current.used_ms+BROWSER_BUDGET.reserveMs>BROWSER_BUDGET.dailyMs)throw new SigningError('今日 PDF／簽署瀏覽器預算已用完，請明日再試；一般報價仍可使用列印另存 PDF。',429);
-    throw new SigningError('產檔服務忙碌或啟動間隔尚未結束，請稍後重試。',429);
+    const retryAfter=Math.max(1,Math.ceil((Math.max(current?.next_start_at||0,current?.lease_until||0)-now)/1000));
+    throw new SigningError(current?.lease_until>now
+      ? `另一個產檔工作尚未釋放，請約 ${retryAfter} 秒後重試；目前內容已保留。`
+      : `產檔啟動間隔尚未結束，請等待 ${retryAfter} 秒後重試；目前內容已保留。`,429,retryAfter);
   }
   return {day,id,startedAt:now};
 }

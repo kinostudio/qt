@@ -19,16 +19,23 @@
       <section><div class="qt-signing-heading"><h3>本帳號的簽署紀錄</h3><button type="button" data-action="refresh">重新整理狀態</button></div><div data-area="list"></div>
       <div class="qt-signing-pager"><button type="button" data-action="previous">上一頁</button><button type="button" data-action="next">下一頁</button></div></section></div>`;
     const area=name=>dialog.querySelector(`[data-area="${name}"]`),button=name=>dialog.querySelector(`[data-action="${name}"]`),notice=dialog.querySelector('[role="status"]');
-    let snapshot,blobUrl,offset=0,nextOffset=null,busy=false,closed=false;
+    let snapshot,blobUrl,offset=0,nextOffset=null,busy=false,closed=false,retryAt=0,retryTimer;
     const message=(text,error=false)=>{notice.textContent=text;notice.classList.toggle('error',error);};
+    const refreshRenderButtons=()=>{
+      const seconds=Math.max(0,Math.ceil((retryAt-Date.now())/1000));
+      button('prepare').disabled=busy||seconds>0;
+      button('create').disabled=busy||seconds>0||!snapshot||!area('confirmed').checked;
+      for(const [name,label] of [['prepare','準備固定版本並預覽'],['create','建立客戶簽署連結']])button(name).textContent=label+(seconds>0?`（${seconds} 秒後可重試）`:'');
+      if(!seconds&&retryTimer){clearInterval(retryTimer);retryTimer=null;message('等待已結束，可以重試；目前內容已保留。');}
+    };
     const release=()=>{if(blobUrl){URL.revokeObjectURL(blobUrl);blobUrl=null;}};
-    dialog.addEventListener('close',()=>{closed=true;release();dialog.remove();if(current===dialog)current=null;});
+    dialog.addEventListener('close',()=>{closed=true;clearInterval(retryTimer);release();dialog.remove();if(current===dialog)current=null;});
     button('close').onclick=()=>dialog.close();
     const run=async fn=>{
       if(busy||closed)return;busy=true;dialog.setAttribute('aria-busy','true');
       const controls=[...dialog.querySelectorAll('button,input')],disabled=controls.map(c=>c.disabled);controls.forEach(c=>c.disabled=true);
-      try{await fn();}catch(error){message(error.message==='SYNC_CANCELLED'?'請先使用 Google 登入。':error.message||'操作失敗，請重試。',true);}
-      finally{controls.forEach((c,i)=>c.disabled=disabled[i]);busy=false;dialog.removeAttribute('aria-busy');button('create').disabled=!snapshot||!area('confirmed').checked;button('previous').disabled=offset===0;button('next').disabled=nextOffset===null;if(closed)release();}
+      try{await fn();}catch(error){message(error.message==='SYNC_CANCELLED'?'請先使用 Google 登入。':error.message||'操作失敗，請重試。',true);if(error.status===429&&Number.isInteger(error.retryAfter)&&error.retryAfter>0){retryAt=Date.now()+error.retryAfter*1000;clearInterval(retryTimer);retryTimer=setInterval(refreshRenderButtons,250);}}
+      finally{controls.forEach((c,i)=>c.disabled=disabled[i]);busy=false;dialog.removeAttribute('aria-busy');refreshRenderButtons();button('previous').disabled=offset===0;button('next').disabled=nextOffset===null;if(closed)release();}
     };
     const download=async row=>{
       const blob=await binary(`/api/signing/${row.id}/pdf`);if(!blob.type.includes('application/pdf'))throw new Error('已簽 PDF 格式不正確');
@@ -54,7 +61,7 @@
       if(!result.items.length)area('list').append(element('p','目前沒有簽署紀錄。'));
       button('previous').disabled=offset===0;button('next').disabled=nextOffset===null;
     }
-    area('confirmed').onchange=()=>{button('create').disabled=!snapshot||!area('confirmed').checked;};
+    area('confirmed').onchange=refreshRenderButtons;
     button('prepare').onclick=()=>run(async()=>{
       snapshot=null;area('confirmed').checked=false;area('prepared').hidden=true;release();message('正在固定目前報價並產生預覽，尚未建立客戶連結…');
       const captured=await new Promise((resolve,reject)=>window.dispatchEvent(new CustomEvent('quotation-signing-snapshot',{detail:{resolve,reject}})));

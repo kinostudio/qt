@@ -1,9 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker from '../cloud-sync/src/index.js';
+import {SigningError} from '../cloud-sync/src/signing-store.js';
 
 const origin='https://qt.kinostudio.tw';
 const token='isolated-google-session-not-a-real-token';
+test('worker preserves render retry timing in JSON and HTTP headers',async()=>{
+  const env={ALLOWED_ORIGINS:origin,DB:{prepare(){return{bind(){return this;},async first(){throw new SigningError('請等待 22 秒後重試',429,22);}};}}};
+  const response=await worker.fetch(new Request('https://api.test/api/onedrive',{headers:{Origin:origin,Authorization:'Bearer '+token}}),env);
+  assert.equal(response.status,429);
+  assert.equal(response.headers.get('retry-after'),'22');
+  assert.equal(response.headers.get('cache-control'),'no-store');
+  assert.deepEqual(await response.json(),{error:'請等待 22 秒後重試',retryAfter:22});
+});
 function environment(authenticated=false) {
   const writes=[];
   return {ALLOWED_ORIGINS:origin,writes,DB:{prepare(sql){

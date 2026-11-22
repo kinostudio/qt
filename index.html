@@ -1665,7 +1665,7 @@
                 <button ref={trigger} type="button" aria-label="雲端與帳號" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(value => !value)} className={`qt-toolbar-control qt-toolbar-button border border-kino/25 bg-white text-kino hover:bg-blue-50 ${compact ? 'w-full' : ''}`}>
                     <i className="fas fa-cloud" aria-hidden="true"></i>雲端與帳號
                     <span className={`rounded-full px-2 py-0.5 text-[11px] ${notice ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'}`}>{status === 'pending' ? '待確認同步' : status === 'error' ? '同步失敗' : needsReconnect || driveStatus === 'error' ? 'OneDrive 待處理' : status === 'syncing' || driveBusy ? '處理中' : '設定'}</span>
-                    <span aria-hidden="true">⌄</span>
+                    <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`}><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
                 {open && ReactDOM.createPortal(<div className="no-print fixed inset-0 z-[90] bg-slate-900/25" onClick={event => { if (event.target === event.currentTarget) close(); }}>
                     <section ref={panel} role="dialog" aria-modal="true" aria-label="雲端與帳號設定" tabIndex={-1} className="fixed bottom-0 left-0 right-0 max-h-[88dvh] overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl outline-none sm:bottom-auto sm:left-auto sm:right-6 sm:top-24 sm:w-[420px] sm:rounded-2xl" style={{paddingBottom:'max(1.25rem, env(safe-area-inset-bottom))'}}>
@@ -1690,7 +1690,7 @@
                             {account && <p className="mt-1 text-xs text-gray-500">自動存檔：{autoSave ? '已開啟' : '關閉（手動儲存）'}{driveStatus === 'saved' ? '・最近儲存成功' : ''}</p>}
                             <div className="mt-3 flex overflow-hidden rounded-xl border border-blue-700 bg-blue-700 text-white">
                                 <button type="button" disabled={driveBusy} onClick={() => act(account && folder && !needsReconnect ? onSaveOneDrive : onOneDrive)} className="min-w-0 flex-1 px-3 py-3 text-sm font-bold hover:bg-blue-800 disabled:opacity-50"><i className={`fas ${driveBusy ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-2`} aria-hidden="true"></i>{primaryLabel}</button>
-                                <button type="button" onClick={() => act(onOneDrive)} aria-label="OneDrive 帳號與儲存設定" title="帳號、資料夾與自動存檔設定" className="w-12 shrink-0 border-l border-white/30 text-xl hover:bg-blue-800"><span aria-hidden="true">⌄</span></button>
+                                <button type="button" onClick={() => act(onOneDrive)} aria-label="OneDrive 帳號與儲存設定" title="帳號、資料夾與自動存檔設定" className="flex w-12 shrink-0 items-center justify-center border-l border-white/30 hover:bg-blue-800"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className="h-4 w-4 shrink-0"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
                             </div>
                         </section>
                         <p className="mt-3 text-xs leading-5 text-gray-500">開啟此面板不會合併、上傳或儲存任何資料。</p>
@@ -3658,6 +3658,7 @@
                     const error = new Error(body.error || `雲端同步失敗 (${response.status})`);
                     error.status = response.status;
                     error.code = body.code || '';
+                    error.retryAfter = body.retryAfter;
                     throw error;
                 }
                 return response.json();
@@ -3682,7 +3683,10 @@
                 const response = await fetch(`${CLOUD_SYNC_API_URL}${path}`, { ...options,headers: { authorization: `Bearer ${syncKey}`,...(options.headers||{}) } });
                 if (!response.ok) {
                     const body = await response.json().catch(() => ({}));
-                    throw new Error(body.error || `印章載入失敗 (${response.status})`);
+                    const error = new Error(body.error || `檔案載入失敗 (${response.status})`);
+                    error.status = response.status;
+                    error.retryAfter = body.retryAfter;
+                    throw error;
                 }
                 return response.blob();
             };

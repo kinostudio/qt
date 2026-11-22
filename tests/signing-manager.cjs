@@ -33,7 +33,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
             return route.fulfill({body:'%PDF-1.7\nMOCK-ONLY\n%%EOF',contentType:'application/pdf',headers});
           } else if(url.pathname==='/api/signing'&&r.method()==='POST') {
             captured=JSON.parse(r.postData());validateSigningCreate(captured);
-            if(throttleCreate)return route.fulfill({status:429,json:{error:'啟動間隔尚未結束，請稍後重試。'},headers});
+            if(throttleCreate)return route.fulfill({status:429,json:{error:'啟動間隔尚未結束，請等待 2 秒後重試。',retryAfter:2},headers});
             const row={id:crypto.randomUUID(),quotationId:captured.snapshot.quotation.header.quotationId,status:'pending',createdAt:Date.now(),expiresAt:Date.now()+captured.lifetimeDays*86400000,revokedAt:null};records.unshift(row);body={...row,url:'https://quote.kinostudio.tw/s/'+'A'.repeat(43)};
             if(failCreate)return route.abort('failed');
           } else if(url.pathname==='/api/signing')body={items:records,nextOffset:null};
@@ -70,7 +70,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     const desktopDialog=page.getByRole('dialog',{name:'客戶簽署管理'});
     await desktopDialog.getByRole('button',{name:'準備固定版本並預覽'}).click();await desktopDialog.getByRole('status').filter({hasText:'固定版本已備妥'}).waitFor();
     throttleCreate=true;await desktopDialog.getByRole('checkbox').check();await desktopDialog.getByRole('button',{name:'建立客戶簽署連結'}).click();
-    await desktopDialog.getByRole('status').filter({hasText:'啟動間隔尚未結束'}).waitFor();assert.equal(await desktopDialog.getByRole('button',{name:'建立客戶簽署連結'}).isVisible(),true);assert.equal(records.length,2);
+    await desktopDialog.getByRole('status').filter({hasText:'啟動間隔尚未結束'}).waitFor();assert.equal(await desktopDialog.getByRole('button',{name:/建立客戶簽署連結/}).isDisabled(),true);assert.equal(records.length,2);
+    await desktopDialog.getByRole('checkbox').uncheck();await desktopDialog.getByRole('checkbox').check();assert.equal(await desktopDialog.getByRole('button',{name:/建立客戶簽署連結/}).isDisabled(),true);
+    await desktopDialog.getByRole('status').filter({hasText:'等待已結束'}).waitFor();assert.equal(await desktopDialog.getByRole('button',{name:'建立客戶簽署連結',exact:true}).isEnabled(),true);
     throttleCreate=false;failCreate=true;await desktopDialog.getByRole('button',{name:'建立客戶簽署連結'}).click();
     await desktopDialog.getByRole('status').filter({hasText:'避免重複建立'}).waitFor();assert.equal(count(),3);assert.equal(records.length,3);assert.equal(await desktopDialog.getByRole('button',{name:'建立客戶簽署連結'}).isVisible(),false);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
