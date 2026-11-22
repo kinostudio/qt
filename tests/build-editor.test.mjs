@@ -14,5 +14,7 @@ test('editor build contains current UI and only the public allowlist',async()=>{
   assert.equal(await fs.readFile('tmp/qt-editor-site/assets/signing-manager.js','utf8'),await fs.readFile('assets/signing-manager.js','utf8'));
   assert.equal(await fs.readFile('tmp/qt-editor-site/assets/signing-manager.css','utf8'),await fs.readFile('assets/signing-manager.css','utf8'));
   const html=await fs.readFile('tmp/qt-editor-site/index.html','utf8');
+  assert.ok(html.includes('./assets/branding/manifest.webmanifest'));
+  for(const file of ['manifest.webmanifest','kino-mark.svg','qt-app.svg','qt-32.png','qt-180.png','qt-192.png','qt-512.png'])assert.deepEqual(await fs.readFile('tmp/qt-editor-site/assets/branding/'+file),await fs.readFile('assets/branding/'+file));
   for(const marker of ['CloudChangeContent','syncNotice','設定印章','向上蓋住公司資訊','data-pdf-client-field','oneDriveWrites']) assert.ok(html.includes(marker),marker+' must survive migration');
 });

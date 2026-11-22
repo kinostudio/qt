@@ -43,6 +43,9 @@ const root=path.resolve(__dirname,'..'),origin='https://qt.kinostudio.tw',api='h
       const trigger=()=>page.getByRole('button',{name:'雲端與帳號',exact:true}).filter({visible:true});
       const open=async()=>{await trigger().click();await page.getByRole('dialog',{name:'雲端與帳號設定',exact:true}).waitFor();};
       await page.goto(origin+'/',{waitUntil:'domcontentloaded'});
+      const brand=page.locator('img[src="./assets/branding/kino-mark.svg"]').filter({visible:true});
+      await brand.waitFor();assert.equal(await brand.count(),1);
+      assert.ok(await brand.evaluate(img=>img.complete&&img.naturalWidth>0));
       const arrow=trigger().locator('svg');
       assert.equal(await arrow.getAttribute('aria-hidden'),'true');
       assert.ok(!(await arrow.getAttribute('class')).includes('rotate-180'));
