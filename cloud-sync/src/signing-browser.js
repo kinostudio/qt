@@ -3,6 +3,7 @@ import {SigningError} from './signing-store.js';
 import {prepareSigningPage,renderSigningPdf} from './signing-render.js';
 import {PRINT_FONT_URL} from './pdf-render.js';
 import {createBudgetBrowserSession} from './browser-budget.js';
+import {rasterizeSigningImages} from './signing-validation.js';
 
 export function createSigningRenderSession(env) {
   let fontPromise;
@@ -15,6 +16,11 @@ export function createSigningRenderSession(env) {
     return 'data:font/ttf;base64,'+Buffer.from(bytes).toString('base64');
   })();
   return {
+    async prepareSnapshot(snapshot) {
+      const page=await (await browser()).newPage();
+      try {return await rasterizeSigningImages(page,snapshot);}
+      finally {await page.close().catch(()=>{});}
+    },
     async validateImage(_image,{snapshot,submission}) {
       const page=await (await browser()).newPage();
       try {await prepareSigningPage(page,snapshot,submission,await font());}

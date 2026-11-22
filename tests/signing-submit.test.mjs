@@ -25,7 +25,7 @@ async function fixture(t) {
 
 const previewBody=body=>{const {idempotencyKey,consent,...fields}=body;return fields;};
 
-test('filled preview permits revisions without storing or accepting any client signature',async t=>{
+test('filled preview caches revisions privately without accepting or locking a client signature',async t=>{
   const f=await fixture(t),seen=[];
   const original=[...f.objects.entries()];
   f.services.renderPdf=async({submission})=>{seen.push(submission);return pdf;};
@@ -35,10 +35,45 @@ test('filled preview permits revisions without storing or accepting any client s
   }
   assert.deepEqual(seen.map(s=>s.clientCompany),['第一份預覽','修改後預覽']);
   assert.ok(seen.every(s=>s.consent===undefined));
-  assert.deepEqual([...f.objects.entries()],original);
+  for(const [key,value] of original)assert.deepEqual(f.objects.get(key),value);
+  assert.equal([...f.objects.keys()].filter(key=>key.includes('/client-preview-')).length,2);
   assert.equal(f.sqlite.prepare('SELECT status,submission_key FROM quote_signing_requests').get().status,'pending');
   assert.equal(f.sqlite.prepare('SELECT submission_key FROM quote_signing_requests').get().submission_key,null);
   assert.equal((await submitSigningRequest(f.db,f.bucket,f.share.token,f.body,f.services)).status,'signed');
+});
+
+test('identical customer preview and final consent reuse the exact PDF without browser or render allowance',async t=>{
+  const f=await fixture(t);
+  const preview=await previewSigningSubmission(f.db,f.bucket,f.share.token,previewBody(f.body),f.services);
+  assert.deepEqual(f.counts(),{renders:1,verifications:1});
+  f.services.allowRender=async()=>{throw Error('cached operation must not consume render allowance');};
+  f.services.validateImage=async()=>{throw Error('cached image was already verified');};
+  f.services.renderPdf=async()=>{throw Error('must reuse preview PDF');};
+  assert.deepEqual(await previewSigningSubmission(f.db,f.bucket,f.share.token,previewBody(f.body),f.services),preview);
+  assert.equal((await submitSigningRequest(f.db,f.bucket,f.share.token,f.body,f.services)).status,'signed');
+  assert.deepEqual((await loadSignedPdfForGuest(f.db,f.bucket,f.share.token)).bytes,preview.bytes);
+  assert.deepEqual((await loadSignedPdfForOwner(f.db,f.bucket,'user:test',f.share.id)).bytes,preview.bytes);
+});
+
+test('changed client fields or another quote cannot reuse an existing preview; tampering fails closed',async t=>{
+  const f=await fixture(t);await previewSigningSubmission(f.db,f.bucket,f.share.token,previewBody(f.body),f.services);
+  f.services.allowRender=async()=>false;
+  await assert.rejects(submitSigningRequest(f.db,f.bucket,f.share.token,{...f.body,clientContact:'改名'},f.services),e=>e.status===429);
+  const other=await createSigningRequest(f.db,f.bucket,'user:test',signingBody().snapshot,14);
+  await assert.rejects(submitSigningRequest(f.db,f.bucket,other.token,{...f.body,snapshotSha256:other.snapshotSha256},f.services),e=>e.status===429);
+  const key=[...f.objects.keys()].find(key=>key.includes('/client-preview-'));
+  f.objects.set(key,new TextEncoder().encode('%PDF-tampered'));
+  await assert.rejects(submitSigningRequest(f.db,f.bucket,f.share.token,f.body,f.services),e=>e.status===503);
+  assert.equal(f.sqlite.prepare('SELECT status FROM quote_signing_requests WHERE id=?').get(f.share.id).status,'pending');
+});
+
+test('cached final PDF storage failure retries without producing another PDF',async t=>{
+  const f=await fixture(t);await previewSigningSubmission(f.db,f.bucket,f.share.token,previewBody(f.body),f.services);
+  const bucket={...f.bucket,async put(key,...args){if(key.includes('/signed/'))throw Error('isolated storage failure');return f.bucket.put(key,...args);}};
+  await assert.rejects(submitSigningRequest(f.db,bucket,f.share.token,f.body,f.services),e=>e.status===503);
+  f.services.allowRender=async()=>false;
+  assert.equal((await submitSigningRequest(f.db,f.bucket,f.share.token,f.body,f.services)).status,'signed');
+  assert.deepEqual(f.counts(),{renders:1,verifications:1});
 });
 
 test('filled preview rejects changed versions, extra quote fields and invalid images before rendering',async t=>{

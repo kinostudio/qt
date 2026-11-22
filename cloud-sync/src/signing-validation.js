@@ -73,10 +73,14 @@ function stamp(value) {
 }
 
 export function validateSigningCreate(body) {
-  object(body,['confirmed','snapshot','lifetimeDays'],'待簽版本');
+  object(body,['confirmed','snapshot','lifetimeDays','preparedId'],'待簽版本');
   if(body.confirmed!==true) throw new SigningError('請先確認報價內容，再建立待簽版本');
   const days=body.lifetimeDays??14;
   if(!Number.isInteger(days) || days<1 || days>30) invalid('連結期限');
+  if(body.preparedId!==undefined) {
+    if(typeof body.preparedId!=='string'||!/^[a-f0-9-]{36}$/.test(body.preparedId)||body.snapshot!==undefined)invalid('固定版本');
+    return {preparedId:body.preparedId,lifetimeDays:days};
+  }
   const snapshot=body.snapshot;
   object(snapshot,['quotation','printScale','rendererVersion','printDocument'],'快照');
   if(snapshot.rendererVersion!==1) invalid('版型版本');

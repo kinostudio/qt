@@ -1,6 +1,7 @@
 import {SigningError,loadSigningSnapshot,signingSha256} from './signing-store.js';
 import {loadSignedPdfForGuest} from './signing-submit.js';
 import {validateSigningPreview} from './signing-validation.js';
+import {clientPreviewKey,readPreparedPdf,storePreparedPdf} from './signing-prepared.js';
 
 function pdfBytes(rendered) {
   const bytes=rendered instanceof Uint8Array?rendered:new Uint8Array(rendered);
@@ -13,12 +14,22 @@ export async function previewSigningSubmission(db,bucket,token,body,services) {
   const fixed=await loadSigningSnapshot(db,bucket,token);
   if(fixed.status!=='pending') throw new SigningError('此報價已送出簽署，不能更改預覽',409);
   if(submission.snapshotSha256!==fixed.snapshotSha256) throw new SigningError('報價版本已變更，請重新載入',409);
+  const key=await clientPreviewKey(fixed.id,submission),cached=await readPreparedPdf(bucket,key);
+  if(cached){
+    const current=await loadSigningSnapshot(db,bucket,token);
+    if(current.status!=='pending')throw new SigningError('簽署狀態已變更，請重新載入',409);
+    return {...cached,id:fixed.id,quotationId:fixed.snapshot.quotation.header.quotationId};
+  }
   if(!await services.allowRender(fixed.id)) throw new SigningError('預覽過於頻繁，請稍後重試',429);
   await services.validateImage(submission.signatureImage,{snapshot:fixed.snapshot,submission});
   const bytes=pdfBytes(await services.renderPdf({snapshot:fixed.snapshot,submission}));
   const current=await loadSigningSnapshot(db,bucket,token);
   if(current.status!=='pending') throw new SigningError('簽署狀態已變更，請重新載入',409);
-  return {bytes,sha256:await signingSha256(bytes),id:fixed.id,quotationId:fixed.snapshot.quotation.header.quotationId};
+  const stored=await storePreparedPdf(bucket,key,bytes);
+  // Recheck access after storage so revocation during I/O never returns a usable preview.
+  const latest=await loadSigningSnapshot(db,bucket,token);
+  if(latest.status!=='pending')throw new SigningError('簽署狀態已變更，請重新載入',409);
+  return {...stored,id:fixed.id,quotationId:fixed.snapshot.quotation.header.quotationId};
 }
 
 export async function loadSigningPreview(db,bucket,token,services) {

@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const parent=path.join(root,'tmp'),output=path.join(parent,'qt-signing-site');
-const files=['index.html','app.js','app.css','_headers','_redirects'];
+const files=['index.html','app.js','app.css','kino-logo-white.png','_headers','_redirects'];
 await fs.mkdir(parent,{recursive:true});
 if(await fs.realpath(parent)!==parent)throw new Error('Build parent must not be a symlink');
 await fs.mkdir(output,{recursive:true});

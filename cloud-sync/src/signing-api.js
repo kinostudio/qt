@@ -4,6 +4,7 @@ import {loadSignedPdfForGuest,loadSignedPdfForOwner,submitSigningRequest} from '
 import {createSigningRenderSession} from './signing-browser.js';
 import {loadSigningPreview,previewSigningSubmission} from './signing-preview.js';
 import {createBudgetBrowserSession} from './browser-budget.js';
+import {prepareOwnerSigning,loadOwnerPrepared} from './signing-prepared.js';
 
 export const isSigningGuestPath=path=>['/api/signing/guest','/api/signing/guest/pdf','/api/signing/guest/preview'].includes(path);
 
@@ -73,10 +74,25 @@ export async function handleSigningGuest(request,env,createSession=createSigning
   return reply({...fixed,snapshot:visible,canSubmit:env.SIGNING_SUBMIT_ENABLED==='true'});
 }
 
-export async function handleSigningOwner(request,env,auth,decodeImages=decodeImagesUsingBrowser) {
+export async function handleSigningOwner(request,env,auth,decodeImages=decodeImagesUsingBrowser,createSession=createSigningRenderSession) {
   const allowed=String(env.SIGNING_ALLOWED_EMAILS||'').split(',').map(email=>email.trim().toLowerCase()).filter(Boolean);
   if(auth?.type!=='google' || !allowed.includes(String(auth.user?.email||'').toLowerCase())) throw new SigningError('此帳號尚未開通客戶簽署',403);
   const path=new URL(request.url).pathname;
+  if(path==='/api/signing/prepare'&&request.method==='POST') {
+    const body=await readSigningJson(request);
+    if(!body||Object.keys(body).length!==1||!body.snapshot)throw new SigningError('固定版本格式不正確');
+    const {snapshot}=validateSigningCreate({confirmed:true,snapshot:body.snapshot});
+    if(!env.PDF_RATE_LIMITER)throw new SigningError('簽署用量保護尚未設定',503);
+    if(!(await env.PDF_RATE_LIMITER.limit({key:auth.user.id})).success)throw new SigningError('操作過於頻繁，請稍後重試',429);
+    const session=createSession(env);
+    try {return reply(await prepareOwnerSigning(env.STAMP_BUCKET,auth.workspaceId,snapshot,session),201);}
+    finally {await session.close();}
+  }
+  const prepared=/^\/api\/signing\/prepared\/([a-f0-9-]{36})\/pdf$/.exec(path);
+  if(prepared&&request.method==='GET') {
+    const fixed=await loadOwnerPrepared(env.STAMP_BUCKET,auth.workspaceId,prepared[1]);
+    return pdfReply(fixed.pdf,fixed.snapshot.quotation.header.quotationId);
+  }
   if(path==='/api/signing' && request.method==='GET') {
     const offset=new URL(request.url).searchParams.get('offset')||'0';
     if(!/^\d{1,6}$/.test(offset))throw new SigningError('簽署清單頁碼不正確');
@@ -84,7 +100,14 @@ export async function handleSigningOwner(request,env,auth,decodeImages=decodeIma
   }
   if(path==='/api/signing' && request.method==='POST') {
     if(!env.SIGNING_LINK_SECRET)throw new SigningError('簽署連結金鑰尚未設定',503);
-    const {snapshot,lifetimeDays}=validateSigningCreate(await readSigningJson(request));
+    const {snapshot,lifetimeDays,preparedId}=validateSigningCreate(await readSigningJson(request));
+    if(preparedId) {
+      if(!env.PDF_RATE_LIMITER)throw new SigningError('簽署用量保護尚未設定',503);
+      if(!(await env.PDF_RATE_LIMITER.limit({key:'signing:create:'+auth.user.id})).success)throw new SigningError('連結建立過於頻繁，請稍後重試',429);
+      const fixed=await loadOwnerPrepared(env.STAMP_BUCKET,auth.workspaceId,preparedId);
+      const share=await createSigningRequest(env.DB,env.STAMP_BUCKET,auth.workspaceId,fixed.snapshot,lifetimeDays,Date.now(),env.SIGNING_LINK_SECRET,fixed.pdf);
+      return reply({...share,url:`https://quote.kinostudio.tw/s/${share.token}`},201);
+    }
     if(!env.PDF_RATE_LIMITER) throw new SigningError('簽署用量保護尚未設定',503);
     const limit=await env.PDF_RATE_LIMITER.limit({key:auth.user.id});
     if(!limit.success) throw new SigningError('操作過於頻繁，請稍後重試',429);

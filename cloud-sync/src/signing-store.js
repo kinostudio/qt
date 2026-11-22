@@ -64,7 +64,7 @@ export async function listSigningRequests(db,workspaceId,offset=0) {
 }
 
 // The caller must supply the confirmed, self-contained quote, not its project-library record.
-export async function createSigningRequest(db, bucket, workspaceId, snapshot, lifetimeDays = 14, now = Date.now(), linkSecret) {
+export async function createSigningRequest(db, bucket, workspaceId, snapshot, lifetimeDays = 14, now = Date.now(), linkSecret,previewPdf) {
   validWorkspace(workspaceId);
   if (!Number.isInteger(lifetimeDays) || lifetimeDays < 1 || lifetimeDays > 30 || !Number.isSafeInteger(now)) {
     throw new SigningError('連結期限須為 1–30 天');
@@ -85,6 +85,12 @@ export async function createSigningRequest(db, bucket, workspaceId, snapshot, li
     customMetadata: { sha256: hash }
   });
   if (!object) throw new SigningError('無法建立固定待簽版本', 409);
+  if(previewPdf) {
+    const stored=await bucket.put(`quote-signing/v1/${id}/preview-${hash}.pdf`,previewPdf.bytes,{
+      onlyIf:{etagDoesNotMatch:'*'},httpMetadata:{contentType:'application/pdf',cacheControl:'private, no-store'},customMetadata:{sha256:previewPdf.sha256}
+    });
+    if(!stored)throw new SigningError('固定 PDF 尚未保存，尚未建立連結',503);
+  }
   // Keep the private object if D1 reports an error: the commit outcome may be uncertain.
   await db.prepare(SIGNING_SQL.create).bind(id, workspaceId, await signingTokenHash(token), key, hash, now, expiresAt,String(snapshot.quotation?.header?.quotationId||'').slice(0,2000)).run();
   return { id, token, snapshotSha256: hash, expiresAt };

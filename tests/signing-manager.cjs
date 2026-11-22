@@ -7,7 +7,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   try {
     const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
     await context.grantPermissions(['clipboard-read','clipboard-write']);
-    const page=await context.newPage(),calls=[],errors=[],records=[];let captured,enabled=true,failCreate=false,throttleCreate=false;
+    const page=await context.newPage(),calls=[],errors=[],records=[];let captured,preparedSnapshot,enabled=true,failCreate=false,throttleCreate=false;
+    const preparedId='22222222-2222-4222-8222-222222222222';
     const signed={id:'11111111-1111-4111-8111-111111111111',quotationId:'TEST-SIGNED',status:'signed',createdAt:Date.now(),expiresAt:Date.now()+86400000,revokedAt:null};
     records.push(signed);
     page.on('pageerror',e=>errors.push(e.message));
@@ -28,13 +29,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
           if(url.pathname==='/api/auth/me')body={user:{email:'owner@example.test'}};
           else if(url.pathname==='/api/stamps')body={assets:[]};
           else if(url.pathname==='/api/sync'&&r.method()==='GET')body={projects:[],templates:[],categories:[],clauses:[]};
-          else if(url.pathname==='/api/pdf') {
-            const payload=JSON.parse(r.postData());assert.equal(payload.editableClientFields,false);assert.match(payload.html,/data-signing-client-signature/);
-            return route.fulfill({body:'%PDF-1.7\nMOCK-ONLY\n%%EOF',contentType:'application/pdf',headers});
+          else if(url.pathname==='/api/signing/prepare') {
+            const payload=JSON.parse(r.postData());validateSigningCreate({confirmed:true,...payload});preparedSnapshot=payload.snapshot;body={preparedId};
           } else if(url.pathname==='/api/signing'&&r.method()==='POST') {
             captured=JSON.parse(r.postData());validateSigningCreate(captured);
             if(throttleCreate)return route.fulfill({status:429,json:{error:'啟動間隔尚未結束，請等待 2 秒後重試。',retryAfter:2},headers});
-            const row={id:crypto.randomUUID(),quotationId:captured.snapshot.quotation.header.quotationId,status:'pending',createdAt:Date.now(),expiresAt:Date.now()+captured.lifetimeDays*86400000,revokedAt:null};records.unshift(row);body={...row,url:'https://quote.kinostudio.tw/s/'+'A'.repeat(43)};
+            assert.equal(captured.preparedId,preparedId);assert.equal(captured.snapshot,undefined);
+            const row={id:crypto.randomUUID(),quotationId:preparedSnapshot.quotation.header.quotationId,status:'pending',createdAt:Date.now(),expiresAt:Date.now()+captured.lifetimeDays*86400000,revokedAt:null};records.unshift(row);body={...row,url:'https://quote.kinostudio.tw/s/'+'A'.repeat(43)};
             if(failCreate)return route.abort('failed');
           } else if(url.pathname==='/api/signing')body={items:records,nextOffset:null};
           else if(url.pathname.endsWith('/pdf'))return route.fulfill({body:'%PDF-1.7\nMOCK-ARCHIVE\n%%EOF',contentType:'application/pdf',headers});
@@ -77,6 +78,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     await desktopDialog.getByRole('status').filter({hasText:'避免重複建立'}).waitFor();assert.equal(count(),3);assert.equal(records.length,3);assert.equal(await desktopDialog.getByRole('button',{name:'建立客戶簽署連結'}).isVisible(),false);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);
     assert.ok(!calls.includes('POST /api/sync'),'Signing manager cannot write original cloud data');
+    assert.ok(!calls.includes('POST /api/pdf'),'Link creation uses the prepared PDF, not a separate general export');
     enabled=false;await page.reload();await page.getByRole('button',{name:'快速報價',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'客戶簽署',exact:true}).count(),0);
     console.log('PASS isolated editor manager: gated toolbar, fixed capture, explicit create consent, copy, archive download, two-step revoke, mobile/desktop, no sync writes');
   }finally{await browser.close();}

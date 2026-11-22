@@ -2,10 +2,18 @@
   'use strict';
   const API='https://kino-quotation-data-api.film-kinostudio.workers.dev';
   const $=id=>document.getElementById(id),names=['clientCompany','clientContact','clientTaxId','clientPhone'];
+  for(const type of ['contextmenu','dragstart','selectstart'])$('brand').addEventListener(type,event=>event.preventDefault());
   const token=/^\/s\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1];
   let fixed,kind='handwritten',ink=false,upload='',previewBody,submitted,blobUrl,busy=false,locked=false;
   const canvas=$('canvas'),ctx=canvas.getContext('2d');
-  const notice=(text,error=false)=>{$('notice').textContent=text;$('notice').classList.toggle('error',error);};
+  let snackbarTimer;
+  const closeSnackbar=()=>{$('snackbar').hidden=true;clearTimeout(snackbarTimer);};
+  $('snackbar-close').onclick=closeSnackbar;
+  const notice=(text,error=false)=>{
+    closeSnackbar();
+    if(error){$('notice').textContent=$('form').hidden?text:'';$('snackbar').hidden=false;$('snackbar-message').textContent=text;snackbarTimer=setTimeout(closeSnackbar,8000);}
+    else $('notice').textContent=text;
+  };
   const storageKey=()=>`kino_quote_submission_${fixed.id}`;
   function invalidate() {previewBody=null;$('review').hidden=true;$('consent').checked=false;$('confirm').disabled=true;if(blobUrl){URL.revokeObjectURL(blobUrl);blobUrl=null;}}
   async function request(path='',body) {
@@ -47,16 +55,18 @@
   canvas.onpointermove=e=>{if(pointer!==e.pointerId||busy||locked)return;invalidate();const [x,y]=point(e);ctx.lineTo(x,y);ctx.stroke();};
   canvas.onpointerup=canvas.onpointercancel=()=>{pointer=null;};
   $('clear').onclick=()=>{if(locked)return;ctx.clearRect(0,0,canvas.width,canvas.height);ink=false;invalidate();};
-  $('file').onchange=()=>action(async()=>{
+  const selectImage=input=>action(async()=>{
     invalidate();upload='';$('stamp-image').hidden=true;
-    const file=$('file').files[0];if(!file)return;
+    const file=input.files[0];if(!file)return;
     if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024)throw new Error('請選擇 8 MB 以內的 PNG、JPG 或 WebP。');
     const url=URL.createObjectURL(file),image=new Image();
     try {image.src=url;await image.decode();if(!image.naturalWidth||image.naturalWidth*image.naturalHeight>16000000)throw new Error('圖片尺寸過大，請縮小後再上傳。');
       const scale=Math.min(1,1200/Math.max(image.naturalWidth,image.naturalHeight)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(image.naturalWidth*scale));c.height=Math.max(1,Math.round(image.naturalHeight*scale));c.getContext('2d').drawImage(image,0,0,c.width,c.height);upload=c.toDataURL('image/png');
       $('stamp-image').src=upload;$('stamp-image').hidden=false;
-    } finally {URL.revokeObjectURL(url);}
+    } finally {URL.revokeObjectURL(url);input.value='';}
   });
+  $('file').onchange=()=>selectImage($('file'));
+  $('camera').onchange=()=>selectImage($('camera'));
   $('form').onsubmit=e=>{e.preventDefault();void action(async()=>{
     if(locked)return;pointer=null;invalidate();
     const body=Object.fromEntries(names.map(name=>[name,$('form').elements[name].value.trim()]));

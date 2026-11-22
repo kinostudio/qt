@@ -6,13 +6,14 @@ import worker from '../cloud-sync/src/index.js';
 import {signingSha256,SIGNING_SQL} from '../cloud-sync/src/signing-store.js';
 import {readSigningJson,validateSigningCreate,MAX_SIGNING_BODY_BYTES} from '../cloud-sync/src/signing-validation.js';
 import {signingBody} from './fixtures/signing.mjs';
+import {handleSigningOwner} from '../cloud-sync/src/signing-api.js';
 
 const ownerToken='test-owner-session-012345678901',otherToken='test-other-session-012345678901';
 async function fixture(t) {
   const sqlite=new DatabaseSync(':memory:');t.after(()=>sqlite.close());
   sqlite.exec(await fs.readFile('cloud-sync/migrations/0008_quote_signing.sql','utf8'));
   const sessions=new Map([[await signingSha256(ownerToken),{user_id:'test-owner',email:'owner@example.test',expires_at:'2099-01-01'}],[await signingSha256(otherToken),{user_id:'test-other',email:'other@example.test',expires_at:'2099-01-01'}]]);
-  const calls=[],objects=new Map();
+  const calls=[],objects=new Map(),metadata=new Map();
   const env={SIGNING_ENABLED:'true',SIGNING_ALLOWED_EMAILS:'owner@example.test,other@example.test',ALLOWED_ORIGINS:'https://qt.kinostudio.tw',
     SIGNING_LINK_SECRET:'test-only-link-key-not-a-real-secret-12345678',
     PDF_RATE_LIMITER:{async limit(){return {success:true};}},
@@ -20,7 +21,7 @@ async function fixture(t) {
       calls.push({sql,values});const params=Object.fromEntries(values.map((value,i)=>['?'+(i+1),value]));
       return {async first(){return sql.includes('FROM cloud_sessions')?(sessions.get(values[0])||null):(sqlite.prepare(sql).get(params)||null);},async all(){return {results:sqlite.prepare(sql).all(params)};},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(params).changes)}};}};
     }};}},
-    STAMP_BUCKET:{async put(key,contents,options){assert.equal(options.onlyIf.etagDoesNotMatch,'*');objects.set(key,contents);return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}}
+    STAMP_BUCKET:{async put(key,contents,options){assert.equal(options.onlyIf.etagDoesNotMatch,'*');if(objects.has(key))return null;objects.set(key,contents);metadata.set(key,options.customMetadata);return {key};},async get(key){const value=objects.get(key);if(value===undefined)return null;const bytes=typeof value==='string'?new TextEncoder().encode(value):value;return {size:bytes.byteLength,customMetadata:metadata.get(key),async text(){return new TextDecoder().decode(bytes);},async arrayBuffer(){return bytes.slice().buffer;}};}}
   };
   return {sqlite,env,calls,objects};
 }
@@ -30,6 +31,35 @@ function request(path,method='GET',body,token=ownerToken,origin='https://qt.kino
   return new Request('https://api.test'+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
 }
 const guestRequest=token=>new Request('https://api.test/api/signing/guest',{headers:{Origin:'https://quote.kinostudio.tw',Authorization:'Quote '+token}});
+
+test('owner prepares once; link creation and customer original reuse those exact PDF bytes',async t=>{
+  const {env,sqlite,objects}=await fixture(t),auth={type:'google',workspaceId:'user:test-owner',user:{id:'test-owner',email:'owner@example.test'}};
+  let renders=0,decodes=0,closed=0;
+  const bytes=new TextEncoder().encode('%PDF-1.7\nPREPARED-ONCE\n%%EOF');
+  const session=()=>({async prepareSnapshot(snapshot){decodes++;return snapshot;},async renderPdf(){renders++;return bytes;},async close(){closed++;}});
+  const decode=()=>{throw Error('must not decode or acquire a browser when creating a prepared link');};
+  const prepared=await(await handleSigningOwner(request('/api/signing/prepare','POST',{snapshot:signingBody().snapshot}),env,auth,decode,session)).json();
+  assert.equal(renders,1);assert.equal(decodes,1);assert.equal(closed,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM quote_signing_requests').get().n,0);
+  const preview=await handleSigningOwner(request('/api/signing/prepared/'+prepared.preparedId+'/pdf'),env,auth,decode,session);
+  assert.deepEqual(new Uint8Array(await preview.arrayBuffer()),bytes);
+  const body={confirmed:true,preparedId:prepared.preparedId,lifetimeDays:7};
+  const response=await handleSigningOwner(request('/api/signing','POST',body),env,auth,decode,session),share=await response.json();
+  assert.equal(response.status,201);assert.equal(renders,1);assert.equal(share.snapshotSha256,prepared.snapshotSha256);
+  const {loadSigningPreview}=await import('../cloud-sync/src/signing-preview.js');
+  const guest=await loadSigningPreview(env.DB,env.STAMP_BUCKET,share.token,{allowRender(){throw Error('no render limit for cached original');}});
+  assert.deepEqual(guest.bytes,bytes);
+  const {loadOwnerPrepared}=await import('../cloud-sync/src/signing-prepared.js');
+  await assert.rejects(loadOwnerPrepared(env.STAMP_BUCKET,auth.workspaceId,prepared.preparedId,prepared.expiresAt),e=>e.status===409);
+  const before=sqlite.prepare('SELECT COUNT(*) n FROM quote_signing_requests').get().n;
+  const failedBucket={...env.STAMP_BUCKET,async put(key,...args){if(key.includes('/preview-'))return null;return env.STAMP_BUCKET.put(key,...args);}};
+  await assert.rejects(handleSigningOwner(request('/api/signing','POST',body),{...env,STAMP_BUCKET:failedBucket},auth,decode,session),e=>e.status===503);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM quote_signing_requests').get().n,before);
+  await assert.rejects(handleSigningOwner(request('/api/signing','POST',body),env,{...auth,workspaceId:'user:other'},decode,session),e=>e.status===404);
+  const key=[...objects.keys()].find(key=>key.endsWith(prepared.preparedId+'.pdf'));
+  objects.set(key,new TextEncoder().encode('%PDF-TAMPERED'));
+  await assert.rejects(handleSigningOwner(request('/api/signing','POST',body),env,auth,decode,session),e=>e.status===503);
+  assert.equal(renders,1);
+});
 
 test('signing is disabled by default without touching D1 or R2',async t=>{
   const {env,calls,objects}=await fixture(t);delete env.SIGNING_ENABLED;

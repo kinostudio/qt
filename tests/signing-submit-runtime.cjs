@@ -25,6 +25,16 @@ const {Miniflare,convertV4MiniflareOptions}=localRequire('miniflare');
     assert.equal(download.status,200);assert.equal(download.headers.get('x-test-sha256'),receipt.pdfSha256);
     assert.match(await download.text(),/TEST-BYTES-NOT-A-REAL-DOCUMENT/);
     assert.equal((await bucket.list({prefix:`quote-signing/v1/${share.id}/signed/`})).objects.length,1);
+    const cachedShare=await(await post('/create',signingBody())).json();
+    const cachedBody={...body,idempotencyKey:crypto.randomUUID(),snapshotSha256:cachedShare.snapshotSha256};
+    const {idempotencyKey,consent,...fields}=cachedBody;
+    const preview=await post('/preview',fields,cachedShare.token);assert.equal(preview.status,200,await preview.clone().text());
+    const previewBytes=new Uint8Array(await preview.arrayBuffer());
+    const cachedFinal=await post('/submit?simulate-failure',cachedBody,cachedShare.token);
+    assert.equal(cachedFinal.status,200,await cachedFinal.clone().text());
+    const cachedDownload=await mf.dispatchFetch('https://test.invalid/pdf',{headers:{authorization:'Quote '+cachedShare.token}});
+    assert.deepEqual(new Uint8Array(await cachedDownload.arrayBuffer()),previewBytes);
+    assert.equal((await bucket.list({prefix:`quote-signing/v1/${cachedShare.id}/signed/`})).objects.length,1);
     console.log('PASS 隔離workerd完整送出儲存流程：產檔失敗保留提交、同內容重試、不可覆寫及固定檔案讀取；未驗證正式PDF版型');
   } finally {await mf.dispose();}
 })().catch(error=>{console.error(error);process.exit(1);});

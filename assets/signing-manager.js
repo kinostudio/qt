@@ -19,7 +19,7 @@
       <section><div class="qt-signing-heading"><h3>本帳號的簽署紀錄</h3><button type="button" data-action="refresh">重新整理狀態</button></div><div data-area="list"></div>
       <div class="qt-signing-pager"><button type="button" data-action="previous">上一頁</button><button type="button" data-action="next">下一頁</button></div></section></div>`;
     const area=name=>dialog.querySelector(`[data-area="${name}"]`),button=name=>dialog.querySelector(`[data-action="${name}"]`),notice=dialog.querySelector('[role="status"]');
-    let snapshot,blobUrl,offset=0,nextOffset=null,busy=false,closed=false,retryAt=0,retryTimer;
+    let snapshot,preparedId,blobUrl,offset=0,nextOffset=null,busy=false,closed=false,retryAt=0,retryTimer;
     const message=(text,error=false)=>{notice.textContent=text;notice.classList.toggle('error',error);};
     const refreshRenderButtons=()=>{
       const seconds=Math.max(0,Math.ceil((retryAt-Date.now())/1000));
@@ -63,20 +63,21 @@
     }
     area('confirmed').onchange=refreshRenderButtons;
     button('prepare').onclick=()=>run(async()=>{
-      snapshot=null;area('confirmed').checked=false;area('prepared').hidden=true;release();message('正在固定目前報價並產生預覽，尚未建立客戶連結…');
+      snapshot=null;preparedId=null;area('confirmed').checked=false;area('prepared').hidden=true;release();message('正在固定目前報價並產生預覽，尚未建立客戶連結…');
       const captured=await new Promise((resolve,reject)=>window.dispatchEvent(new CustomEvent('quotation-signing-snapshot',{detail:{resolve,reject}})));
-      const blob=await binary('/api/pdf',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...captured.printDocument,editableClientFields:false})});
+      const prepared=await request('/api/signing/prepare',{method:'POST',body:JSON.stringify({snapshot:captured})});
+      const blob=await binary(`/api/signing/prepared/${prepared.preparedId}/pdf`);
       if(!blob.type.includes('application/pdf'))throw new Error('固定 PDF 預覽格式不正確');
-      snapshot=captured;blobUrl=URL.createObjectURL(blob);area('pdf-link').href=blobUrl;dialog.querySelector('iframe').src=blobUrl;
-      area('summary').textContent=`報價單號：${captured.quotation.header.quotationId}｜${captured.quotation.quotationType==='quick'?'快速報價':'詳細報價'}｜列印比例 ${captured.printScale}%`;
+      snapshot=captured;preparedId=prepared.preparedId;blobUrl=URL.createObjectURL(blob);area('pdf-link').href=blobUrl;dialog.querySelector('iframe').src=blobUrl;
+      area('summary').textContent=`報價單號：${captured.quotation.header.quotationId}｜${captured.quotation.quotationType==='quick'?'快速報價':'詳細報價'}｜列印比例 ${captured.printScale}%`+(prepared.expiresAt?`｜請於 ${date(prepared.expiresAt)} 前建立連結`:'');
       area('prepared').hidden=false;message('固定版本已備妥。請開啟完整 PDF 核對，再勾選確認。');
     });
     button('create').onclick=()=>run(async()=>{
       if(!snapshot||!area('confirmed').checked)return;
       const days=Number(area('days').value);if(!Number.isInteger(days)||days<1||days>30)throw new Error('連結有效天數須為1–30天。');
       let record;
-      try{record=await request('/api/signing',{method:'POST',body:JSON.stringify({confirmed:true,snapshot,lifetimeDays:days})});}
-      catch(error){if(error.status===429)throw error;snapshot=null;area('prepared').hidden=true;release();await load().catch(()=>{});throw new Error((error.message||'連線失敗')+'。請先重新整理簽署紀錄確認是否已建立，避免重複建立。');}
+      try{record=await request('/api/signing',{method:'POST',body:JSON.stringify({confirmed:true,preparedId,lifetimeDays:days})});}
+      catch(error){if(error.status===429)throw error;snapshot=null;preparedId=null;area('prepared').hidden=true;release();if([400,404,409].includes(error.status))throw error;await load().catch(()=>{});throw new Error((error.message||'連線失敗')+'。請先重新整理簽署紀錄確認是否已建立，避免重複建立。');}
       snapshot=null;area('prepared').hidden=true;release();showLink(record);offset=0;await load();message('已建立不可隨草稿變動的待簽版本。可將專用連結傳給客戶。');
     });
     button('refresh').onclick=()=>run(async()=>{await load();message('簽署狀態已更新。');});
