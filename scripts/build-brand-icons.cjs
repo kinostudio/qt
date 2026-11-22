@@ -8,6 +8,11 @@ const fs=require('node:fs'),path=require('node:path'),{chromium}=require('playwr
     for(const size of [32,180,192,512]){
       await page.setViewportSize({width:size,height:size});
       await page.setContent('<style>html,body{margin:0}svg{display:block;width:100vw;height:100vh}</style>'+svg);
+      const proportions=await page.evaluate(()=>{
+        const mark=document.querySelector('g'),letters=document.querySelector('[aria-label="QT"]');
+        return {mark:mark.getBoundingClientRect().width,letters:letters.getBoundingClientRect().width};
+      });
+      if(proportions.letters<proportions.mark*.9)throw Error('QT must remain comparable in width to the brand mark');
       await page.screenshot({path:path.join(folder,`qt-${size}.png`)});
     }
   }finally{await browser.close();}
